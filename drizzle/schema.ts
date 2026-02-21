@@ -145,3 +145,21 @@ export const girlfriendMoods = mysqlTable("girlfriendMoods", {
 
 export type GirlfriendMood = typeof girlfriendMoods.$inferSelect;
 export type InsertGirlfriendMood = typeof girlfriendMoods.$inferInsert;
+
+/**
+ * Notifications table
+ * Stores push notifications from girlfriends (proactive messages)
+ */
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  girlfriendId: int("girlfriendId").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  content: text("content").notNull(),
+  type: mysqlEnum("type", ["miss_you", "good_morning", "good_night", "random", "mood"]).default("random").notNull(),
+  isRead: boolean("isRead").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;

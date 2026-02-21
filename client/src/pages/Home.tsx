@@ -51,6 +51,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { NotificationBell } from "@/components/NotificationBell";
+import { usePullToRefresh } from "@/hooks/useGestures";
+import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
 
 // 心情配置
 const MOOD_CONFIG: Record<string, { emoji: string; label: string; color: string; bgColor: string }> = {
@@ -76,6 +79,14 @@ export default function Home() {
   const [batchMode, setBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+
+  // 下拉刷新（必须在所有 early return 之前声明）
+  const { isPulling, pullDistance, isRefreshing } = usePullToRefresh({
+    onRefresh: async () => {
+      await refetch();
+    },
+    enabled: isAuthenticated,
+  });
 
   // 退出登录
   const logout = trpc.auth.logout.useMutation({
@@ -378,6 +389,7 @@ export default function Home() {
               </span>
             )}
           </Button>
+          <NotificationBell />
           <Button variant="ghost" size="icon" onClick={toggleTheme}>
             {theme === "light" ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
           </Button>
@@ -395,6 +407,13 @@ export default function Home() {
           </Button>
         </div>
       </header>
+
+      {/* 下拉刷新指示器 */}
+      <PullToRefreshIndicator
+        pullDistance={pullDistance}
+        isRefreshing={isRefreshing}
+        isPulling={isPulling}
+      />
 
       <div className="p-3 sm:p-4 max-w-2xl mx-auto space-y-4 sm:space-y-6 pb-8">
         {/* 欢迎信息 + 批量操作 */}

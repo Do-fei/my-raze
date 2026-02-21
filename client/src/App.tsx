@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
@@ -9,8 +9,13 @@ import Setup from "./pages/Setup";
 import Chat from "./pages/Chat";
 import Gallery from "./pages/Gallery";
 import Settings from "./pages/Settings";
+import { useSwipeBack } from "@/hooks/useGestures";
 
 function Router() {
+  const [location] = useLocation();
+  // 在非首页启用左滑返回手势
+  useSwipeBack({ enabled: location !== "/" });
+
   return (
     <Switch>
       <Route path="/" component={Home} />

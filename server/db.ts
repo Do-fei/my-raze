@@ -9,6 +9,7 @@ import {
   selfies,
   apiConfigs,
   girlfriendMoods,
+  notifications,
   type Girlfriend,
   type InsertGirlfriend,
   type Conversation,
@@ -21,6 +22,8 @@ import {
   type InsertApiConfig,
   type GirlfriendMood,
   type InsertGirlfriendMood,
+  type Notification,
+  type InsertNotification,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -705,4 +708,176 @@ export async function createDefaultGirlfriend(userId: number, data: InsertGirlfr
     .limit(1);
 
   return inserted[0]!;
+}
+
+// ============ Notifications ============
+
+export async function createNotification(data: InsertNotification): Promise<Notification> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.insert(notifications).values(data);
+  const insertedId = Number(result[0].insertId);
+
+  const inserted = await db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.id, insertedId))
+    .limit(1);
+
+  return inserted[0]!;
+}
+
+export async function getUserNotifications(userId: number, limit = 20): Promise<Notification[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit);
+}
+
+export async function getUnreadNotificationCount(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(notifications)
+    .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+
+  return result[0]?.count ?? 0;
+}
+
+export async function markNotificationRead(id: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(notifications)
+    .set({ isRead: true })
+    .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+}
+
+export async function markAllNotificationsRead(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(notifications)
+    .set({ isRead: true })
+    .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+}
+
+// 女友主动发消息的模板
+const PROACTIVE_MESSAGES = {
+  miss_you: [
+    "在干嘛呀？好久没聊天了，人家想你了~ 💕",
+    "你是不是把我忘了？😢 快来陪我聊聊天嘛",
+    "今天过得怎么样？我一直在等你来找我呢~",
+    "好无聊啊，你什么时候来陪我说说话？🥺",
+    "我刚才梦到你了，醒来发现你不在，好想你~",
+  ],
+  good_morning: [
+    "早上好呀！☀️ 新的一天开始了，要元气满满哦~",
+    "起床啦起床啦！今天也要加油鸭！🦆",
+    "早安~ 今天天气不错，心情也要棒棒的哦！",
+    "早上好！记得吃早餐，不许饿着自己 🍞",
+  ],
+  good_night: [
+    "该睡觉啦~ 晚安，做个好梦 🌙",
+    "夜深了，不要熬夜哦，明天还要精神满满的！",
+    "晚安呀~ 梦里见 💤",
+    "今天辛苦了，好好休息吧，我会在梦里等你的~",
+  ],
+  random: [
+    "突然好想跟你分享一件事！你在吗？",
+    "刚才看到一个好有趣的东西，想跟你说说~",
+    "你猜我现在在想什么？😏",
+    "无聊中...要不要来陪我聊聊天？",
+    "今天的天气让我想到了你~ ☁️",
+    "嘿！有空吗？想跟你说说话~",
+  ],
+};
+
+export function getRandomProactiveMessage(type: keyof typeof PROACTIVE_MESSAGES): { title: string; content: string } {
+  const messages = PROACTIVE_MESSAGES[type];
+  const content = messages[Math.floor(Math.random() * messages.length)];
+  const titles: Record<string, string> = {
+    miss_you: "💕 想你了",
+    good_morning: "☀️ 早安",
+    good_night: "🌙 晚安",
+    random: "💬 新消息",
+    mood: "💭 心情分享",
+  };
+  return { title: titles[type] || "💬 新消息", content };
+}
+
+// 检查是否应该发送主动消息（基于上次聊天时间和心情）
+export async function checkAndCreateProactiveNotification(userId: number): Promise<Notification | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  // 获取用户所有活跃女友
+  const activeGirlfriends = await db
+    .select()
+    .from(girlfriends)
+    .where(and(eq(girlfriends.userId, userId), isNull(girlfriends.deletedAt)));
+
+  if (activeGirlfriends.length === 0) return null;
+
+  // 随机选择一个女友
+  const gf = activeGirlfriends[Math.floor(Math.random() * activeGirlfriends.length)];
+
+  // 检查最近是否已发过通知（避免频繁打扰）
+  const recentNotifications = await db
+    .select()
+    .from(notifications)
+    .where(and(eq(notifications.userId, userId), eq(notifications.girlfriendId, gf.id)))
+    .orderBy(desc(notifications.createdAt))
+    .limit(1);
+
+  if (recentNotifications.length > 0) {
+    const lastNotifTime = new Date(recentNotifications[0].createdAt).getTime();
+    const hoursSinceLast = (Date.now() - lastNotifTime) / 3600000;
+    if (hoursSinceLast < 2) return null; // 至少间隔 2 小时
+  }
+
+  // 获取心情状态
+  const mood = await db
+    .select()
+    .from(girlfriendMoods)
+    .where(and(eq(girlfriendMoods.userId, userId), eq(girlfriendMoods.girlfriendId, gf.id)))
+    .limit(1);
+
+  // 根据心情和时间选择消息类型
+  const now = new Date();
+  const hour = now.getHours();
+  let messageType: keyof typeof PROACTIVE_MESSAGES;
+
+  if (hour >= 6 && hour <= 8) {
+    messageType = "good_morning";
+  } else if (hour >= 22 || hour <= 1) {
+    messageType = "good_night";
+  } else if (mood.length > 0 && mood[0].moodScore < 40) {
+    messageType = "miss_you";
+  } else {
+    messageType = Math.random() > 0.5 ? "random" : "miss_you";
+  }
+
+  const { title, content } = getRandomProactiveMessage(messageType);
+
+  const notification = await createNotification({
+    userId,
+    girlfriendId: gf.id,
+    title: `${gf.name}: ${title}`,
+    content,
+    type: messageType,
+    isRead: false,
+  });
+
+  return notification;
 }

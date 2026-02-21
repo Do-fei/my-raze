@@ -32,6 +32,11 @@ import {
   getGirlfriendMood,
   upsertGirlfriendMood,
   getAllGirlfriendMoods,
+  getUserNotifications,
+  getUnreadNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  checkAndCreateProactiveNotification,
 } from "./db";
 import { DEFAULT_GIRLFRIEND } from "../shared/defaultGirlfriend";
 import { storagePut } from "./storage";
@@ -749,6 +754,39 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
 
         return result;
       }),
+  }),
+
+  // ============ Notifications ============
+  notification: router({
+    // 获取通知列表
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return await getUserNotifications(ctx.user.id);
+    }),
+
+    // 获取未读通知数量
+    unreadCount: protectedProcedure.query(async ({ ctx }) => {
+      return await getUnreadNotificationCount(ctx.user.id);
+    }),
+
+    // 标记单条通知为已读
+    markRead: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await markNotificationRead(input.id, ctx.user.id);
+        return { success: true };
+      }),
+
+    // 标记所有通知为已读
+    markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+      await markAllNotificationsRead(ctx.user.id);
+      return { success: true };
+    }),
+
+    // 检查并生成主动通知（前端定时调用）
+    checkProactive: protectedProcedure.mutation(async ({ ctx }) => {
+      const notification = await checkAndCreateProactiveNotification(ctx.user.id);
+      return notification;
+    }),
   }),
 
   // ============ TTS 语音生成 ============
