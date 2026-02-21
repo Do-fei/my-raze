@@ -116,6 +116,9 @@ export const apiConfigs = mysqlTable("apiConfigs", {
   fishAudioApiKey: varchar("fishAudioApiKey", { length: 200 }), // Fish Audio API Key
   fishAudioModelId: varchar("fishAudioModelId", { length: 200 }), // Fish Audio 选择的声音模型 ID
   fishAudioModelName: varchar("fishAudioModelName", { length: 200 }), // Fish Audio 声音模型名称
+  // 语音转写配置
+  whisperProvider: mysqlEnum("whisperProvider", ["manus", "openai"]).default("manus").notNull(), // 语音转写提供商
+  whisperApiKey: varchar("whisperApiKey", { length: 200 }), // OpenAI Whisper API Key
   // 全局提示词配置
   globalPrompt: text("globalPrompt"), // 全局默认提示词，所有女友共享
   replyLanguage: varchar("replyLanguage", { length: 50 }).default("中文"), // 回复语言

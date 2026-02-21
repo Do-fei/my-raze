@@ -184,3 +184,9 @@
 - [x] 前端：创建 VoiceRecordButton 组件（按住说话、波形动画、上滑取消）
 - [x] 前端：Chat.tsx 集成语音/文字模式切换
 - [x] 测试：voice.transcribe API 测试（7 个测试全部通过）
+
+## v2.9 语音转写 API 配置选项
+- [x] 数据库：api_config 表添加 whisperProvider、whisperApiKey 字段
+- [x] 后端：voice.transcribe 支持 Manus 内置/OpenAI 双 API 切换
+- [x] 前端：Settings 页面添加语音转写配置卡片（提供商选择 + API Key 输入）
+- [x] 测试：语音转写 API 切换测试（104/105 测试通过，1 个已有测试失败与新功能无关）

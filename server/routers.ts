@@ -46,6 +46,7 @@ import { invokeLLM } from "./_core/llm";
 import { buildSmartPrompt } from "./promptTemplates";
 import axios from "axios";
 import { transcribeAudio } from "./_core/voiceTranscription";
+import { transcribeWithOpenAI } from "./_core/openaiWhisper";
 
 // 判断是否应该生成自拍的辅助函数
 function shouldGenerateSelfieFromText(aiResponse: string, userMessage: string): boolean {
@@ -537,6 +538,8 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           fishAudioApiKey: z.string().optional(),
           fishAudioModelId: z.string().optional(),
           fishAudioModelName: z.string().optional(),
+          whisperProvider: z.enum(["manus", "openai"]).optional(),
+          whisperApiKey: z.string().optional(),
           globalPrompt: z.string().max(500).nullable().optional(),
           replyLanguage: z.string().max(50).nullable().optional(),
           replyLengthLimit: z.string().max(50).nullable().optional(),
@@ -556,6 +559,8 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           fishAudioApiKey: input.fishAudioApiKey,
           fishAudioModelId: input.fishAudioModelId,
           fishAudioModelName: input.fishAudioModelName,
+          whisperProvider: input.whisperProvider,
+          whisperApiKey: input.whisperApiKey,
           globalPrompt: input.globalPrompt,
           replyLanguage: input.replyLanguage,
           replyLengthLimit: input.replyLengthLimit,
@@ -1027,14 +1032,38 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           input.mimeType
         );
 
-        // 4. 调用 Whisper 转写
-        const result = await transcribeAudio({
-          audioUrl,
-          language: input.language,
-          prompt: "这是一段与 AI 女友的日常对话语音消息",
-        });
+        // 4. 获取用户的语音转写配置
+        const apiConfig = await getUserApiConfig(ctx.user.id);
+        const whisperProvider = apiConfig?.whisperProvider || "manus";
+        const whisperApiKey = apiConfig?.whisperApiKey;
 
-        // 5. 错误处理
+        // 5. 根据配置选择 API
+        let result;
+        if (whisperProvider === "openai") {
+          if (!whisperApiKey) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "请先在设置中配置 OpenAI API Key",
+            });
+          }
+          result = await transcribeWithOpenAI(
+            {
+              audioUrl,
+              language: input.language,
+              prompt: "这是一段与 AI 女友的日常对话语音消息",
+            },
+            whisperApiKey
+          );
+        } else {
+          // 默认使用 Manus 内置服务
+          result = await transcribeAudio({
+            audioUrl,
+            language: input.language,
+            prompt: "这是一段与 AI 女友的日常对话语音消息",
+          });
+        }
+
+        // 6. 错误处理
         if ("error" in result) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
@@ -1042,7 +1071,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           });
         }
 
-        // 6. 返回转写结果
+        // 7. 返回转写结果
         return {
           text: (result as any).text?.trim() || "",
           language: (result as any).language || "unknown",

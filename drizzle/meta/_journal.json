@@ -64,6 +64,13 @@
       "when": 1771676842922,
       "tag": "0008_premium_the_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1771682526781,
+      "tag": "0009_white_shard",
+      "breakpoints": true
     }
   ]
 }

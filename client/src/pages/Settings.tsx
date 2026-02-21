@@ -54,6 +54,11 @@ export default function Settings() {
 
   // TTS states
   const [ttsProvider, setTtsProvider] = useState<TTSProvider>("browser");
+  
+  // Whisper 语音转写配置 states
+  const [whisperProvider, setWhisperProvider] = useState<"manus" | "openai">("manus");
+  const [whisperApiKey, setWhisperApiKey] = useState("");
+  const [hasUnsavedWhisperChanges, setHasUnsavedWhisperChanges] = useState(false);
   const [ttsAutoPlay, setTtsAutoPlay] = useState(() => {
     return localStorage.getItem("tts-autoplay") === "true";
   });
@@ -159,6 +164,8 @@ export default function Settings() {
       setGlobalPrompt(apiConfig.globalPrompt || "");
       setReplyLanguage(apiConfig.replyLanguage || "");
       setReplyLengthLimit(apiConfig.replyLengthLimit || "");
+      setWhisperProvider((apiConfig.whisperProvider as "manus" | "openai") || "manus");
+      setWhisperApiKey(apiConfig.whisperApiKey || "");
     }
   }, [apiConfig]);
 
@@ -350,6 +357,34 @@ export default function Settings() {
         onSuccess: () => {
           setHasUnsavedVoiceChanges(false);
           toast.success("语音配置已保存生效");
+        },
+      }
+    );
+  };
+
+  const handleSaveWhisperConfig = () => {
+    upsertApiConfig.mutate(
+      {
+        falApiKey: falApiKey || undefined,
+        llmApiKey: openRouterKey || undefined,
+        llmModel: selectedModel || undefined,
+        ttsProvider,
+        elevenlabsApiKey: elevenlabsApiKey || undefined,
+        elevenlabsVoiceId: elevenlabsVoiceId || undefined,
+        elevenlabsVoiceName: elevenlabsVoiceName || undefined,
+        fishAudioApiKey: fishAudioApiKey || undefined,
+        fishAudioModelId: fishAudioModelId || undefined,
+        fishAudioModelName: fishAudioModelName || undefined,
+        whisperProvider,
+        whisperApiKey: whisperApiKey || undefined,
+        globalPrompt: globalPrompt || null,
+        replyLanguage: replyLanguage || null,
+        replyLengthLimit: replyLengthLimit || null,
+      },
+      {
+        onSuccess: () => {
+          setHasUnsavedWhisperChanges(false);
+          toast.success("语音转写配置已保存生效");
         },
       }
     );
@@ -998,7 +1033,139 @@ export default function Settings() {
               </CardContent>
             </Card>
 
-            {/* ========== 主题设置 ========== */}
+            {/* ========== 语音转写配置 ========== */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mic className="w-5 h-5" />
+                  语音转写 API 配置
+                </CardTitle>
+                <CardDescription>
+                  配置语音消息转文字服务，选择 Manus 内置服务或 OpenAI Whisper API
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* 提供商选择 */}
+                <div className="space-y-2">
+                  <Label>语音转写提供商</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      className={`p-4 rounded-lg border-2 transition-all ${
+                        whisperProvider === "manus"
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-primary/50"
+                      }`}
+                      onClick={() => {
+                        setWhisperProvider("manus");
+                        setHasUnsavedWhisperChanges(true);
+                      }}
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <Sparkles className="w-6 h-6" />
+                        <span className="font-medium">Manus 内置</span>
+                        <span className="text-xs text-muted-foreground text-center">
+                          开箱即用，无需配置
+                        </span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className={`p-4 rounded-lg border-2 transition-all ${
+                        whisperProvider === "openai"
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-primary/50"
+                      }`}
+                      onClick={() => {
+                        setWhisperProvider("openai");
+                        setHasUnsavedWhisperChanges(true);
+                      }}
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <Zap className="w-6 h-6" />
+                        <span className="font-medium">OpenAI Whisper</span>
+                        <span className="text-xs text-muted-foreground text-center">
+                          需要 API Key，价格低廉
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* OpenAI API Key 输入 */}
+                {whisperProvider === "openai" && (
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label htmlFor="whisperApiKey">OpenAI API Key</Label>
+                    <Input
+                      id="whisperApiKey"
+                      type="password"
+                      placeholder="输入你的 OpenAI API Key (sk-...)" 
+                      value={whisperApiKey}
+                      onChange={(e) => {
+                        setWhisperApiKey(e.target.value);
+                        setHasUnsavedWhisperChanges(true);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      获取 API Key：
+                      <a
+                        href="https://platform.openai.com/api-keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline ml-1 inline-flex items-center gap-1"
+                      >
+                        platform.openai.com <ExternalLink className="w-3 h-3" />
+                      </a>
+                      ，价格：$0.006/分钟（约 ￥0.04/分钟）
+                    </p>
+                  </div>
+                )}
+
+                {/* Manus 内置服务说明 */}
+                {whisperProvider === "manus" && (
+                  <div className="p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
+                    <p>使用 Manus 平台内置的语音转写服务，无需额外配置。费用计入你的 Manus 订阅额度中。</p>
+                  </div>
+                )}
+
+                {/* 保存按钮 */}
+                <div className="pt-2">
+                  <Button
+                    onClick={handleSaveWhisperConfig}
+                    disabled={upsertApiConfig.isPending}
+                    className={`w-full ${
+                      hasUnsavedWhisperChanges
+                        ? "bg-primary hover:bg-primary/90"
+                        : "bg-muted text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {upsertApiConfig.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        保存中...
+                      </>
+                    ) : hasUnsavedWhisperChanges ? (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        保存生效
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 mr-2" />
+                        配置已生效
+                      </>
+                    )}
+                  </Button>
+                  {hasUnsavedWhisperChanges && (
+                    <p className="text-xs text-amber-500 mt-2 text-center">
+                      你有未保存的语音转写配置更改，请点击上方按钮保存生效
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ========== 外观主题 ========== */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
