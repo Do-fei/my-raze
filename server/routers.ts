@@ -156,10 +156,10 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        // 验证文件大小（Base64 编码后约为原始大小的 4/3，5MB 原始文件 ≈ 6.67MB Base64）
-        const maxBase64Size = 5 * 1024 * 1024 * 4 / 3; // ~6.67MB
+        // 验证文件大小（Base64 编码后约为原始大小的 4/3，10MB 原始文件 ≈ 13.33MB Base64）
+        const maxBase64Size = 10 * 1024 * 1024 * 4 / 3; // ~13.33MB
         if (input.imageBase64.length > maxBase64Size) {
-          throw new Error("图片文件过大，请选择 5MB 以内的图片");
+          throw new Error("图片文件过大，请选择 10MB 以内的图片");
         }
 
         const imageBuffer = Buffer.from(input.imageBase64, "base64");

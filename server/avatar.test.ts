@@ -159,8 +159,8 @@ describe("girlfriend.uploadAvatar", () => {
       referenceImageMimeType: "image/png",
     });
 
-    // 生成一个超过 5MB 的 base64 字符串
-    const oversizedBase64 = "A".repeat(7 * 1024 * 1024); // ~7MB base64
+    // 生成一个超过 10MB 的 base64 字符串
+    const oversizedBase64 = "A".repeat(14 * 1024 * 1024); // ~14MB base64
 
     await expect(
       caller.girlfriend.uploadAvatar({

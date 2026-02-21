@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_AVATAR_SIZE = 10 * 1024 * 1024; // 10MB
 
 export default function Setup() {
   const [, setLocation] = useLocation();
@@ -146,7 +146,7 @@ export default function Setup() {
 
     // 大小校验
     if (file.size > MAX_AVATAR_SIZE) {
-      toast.error(`图片文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），请选择 5MB 以内的图片`);
+      toast.error(`图片文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），请选择 10MB 以内的图片`);
       return;
     }
 
@@ -261,7 +261,7 @@ export default function Setup() {
                 <div className="space-y-2">
                   <Label>头像照片</Label>
                   <p className="text-xs text-muted-foreground">
-                    上传一张头像照片，将在首页卡片和聊天页展示（支持 JPG/PNG/GIF/WebP，最大 5MB）
+                    上传一张头像照片，将在首页卡片和聊天页展示（支持 JPG/PNG/GIF/WebP，最大 10MB）
                   </p>
                   <div className="flex items-center gap-4">
                     {/* 头像预览 */}
