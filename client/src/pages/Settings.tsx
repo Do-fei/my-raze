@@ -74,6 +74,12 @@ export default function Settings() {
   // LLM 配置变更追踪
   const [hasUnsavedLlmChanges, setHasUnsavedLlmChanges] = useState(false);
 
+  // 语音配置变更追踪
+  const [hasUnsavedVoiceChanges, setHasUnsavedVoiceChanges] = useState(false);
+
+  // fal.ai 配置变更追踪
+  const [hasUnsavedFalChanges, setHasUnsavedFalChanges] = useState(false);
+
   // 全局提示词 states
   const [globalPrompt, setGlobalPrompt] = useState("");
   const [replyLanguage, setReplyLanguage] = useState("");
@@ -300,14 +306,68 @@ export default function Settings() {
     setElevenlabsVoiceId(voice.id);
     setElevenlabsVoiceName(voice.name);
     setShowElevenLabsVoices(false);
-    toast.success(`已选择声音：${voice.name}`);
+    setHasUnsavedVoiceChanges(true);
+    toast.info(`已选择声音：${voice.name}，请点击"保存生效"确认`);
   };
 
   const handleSelectFishAudioModel = (model: FishAudioModel) => {
     setFishAudioModelId(model.id);
     setFishAudioModelName(model.name);
     setShowFishAudioModels(false);
-    toast.success(`已选择声音：${model.name}`);
+    setHasUnsavedVoiceChanges(true);
+    toast.info(`已选择声音：${model.name}，请点击"保存生效"确认`);
+  };
+
+  const handleSaveVoiceConfig = () => {
+    upsertApiConfig.mutate(
+      {
+        falApiKey: falApiKey || undefined,
+        llmApiKey: openRouterKey || undefined,
+        llmModel: selectedModel || undefined,
+        ttsProvider,
+        elevenlabsApiKey: elevenlabsApiKey || undefined,
+        elevenlabsVoiceId: elevenlabsVoiceId || undefined,
+        elevenlabsVoiceName: elevenlabsVoiceName || undefined,
+        fishAudioApiKey: fishAudioApiKey || undefined,
+        fishAudioModelId: fishAudioModelId || undefined,
+        fishAudioModelName: fishAudioModelName || undefined,
+        globalPrompt: globalPrompt || null,
+        replyLanguage: replyLanguage || null,
+        replyLengthLimit: replyLengthLimit || null,
+      },
+      {
+        onSuccess: () => {
+          setHasUnsavedVoiceChanges(false);
+          toast.success("语音配置已保存生效");
+        },
+      }
+    );
+  };
+
+  const handleSaveFalConfig = () => {
+    upsertApiConfig.mutate(
+      {
+        falApiKey: falApiKey || undefined,
+        llmApiKey: openRouterKey || undefined,
+        llmModel: selectedModel || undefined,
+        ttsProvider,
+        elevenlabsApiKey: elevenlabsApiKey || undefined,
+        elevenlabsVoiceId: elevenlabsVoiceId || undefined,
+        elevenlabsVoiceName: elevenlabsVoiceName || undefined,
+        fishAudioApiKey: fishAudioApiKey || undefined,
+        fishAudioModelId: fishAudioModelId || undefined,
+        fishAudioModelName: fishAudioModelName || undefined,
+        globalPrompt: globalPrompt || null,
+        replyLanguage: replyLanguage || null,
+        replyLengthLimit: replyLengthLimit || null,
+      },
+      {
+        onSuccess: () => {
+          setHasUnsavedFalChanges(false);
+          toast.success("fal.ai 配置已保存生效");
+        },
+      }
+    );
   };
 
   const formatPrice = (price: string) => {
@@ -389,7 +449,10 @@ export default function Settings() {
                     {ttsProviderOptions.map((option) => (
                       <button
                         key={option.value}
-                        onClick={() => setTtsProvider(option.value)}
+                        onClick={() => {
+                          setTtsProvider(option.value);
+                          setHasUnsavedVoiceChanges(true);
+                        }}
                         className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
                           ttsProvider === option.value
                             ? "border-primary bg-primary/5 ring-1 ring-primary/20"
@@ -443,7 +506,10 @@ export default function Settings() {
                         type="password"
                         placeholder="输入你的 ElevenLabs API Key"
                         value={elevenlabsApiKey}
-                        onChange={(e) => setElevenlabsApiKey(e.target.value)}
+                        onChange={(e) => {
+                          setElevenlabsApiKey(e.target.value);
+                          setHasUnsavedVoiceChanges(true);
+                        }}
                       />
                       <p className="text-xs text-muted-foreground">
                         获取 API Key：
@@ -604,7 +670,10 @@ export default function Settings() {
                         type="password"
                         placeholder="输入你的 Fish Audio API Key"
                         value={fishAudioApiKey}
-                        onChange={(e) => setFishAudioApiKey(e.target.value)}
+                        onChange={(e) => {
+                          setFishAudioApiKey(e.target.value);
+                          setHasUnsavedVoiceChanges(true);
+                        }}
                       />
                       <p className="text-xs text-muted-foreground">
                         获取 API Key：
@@ -743,6 +812,40 @@ export default function Settings() {
                     )}
                   </div>
                 )}
+
+                {/* 语音配置保存生效按钮 */}
+                {ttsProvider !== "browser" && (
+                  <div className="pt-3 border-t">
+                    <Button
+                      className="w-full"
+                      onClick={handleSaveVoiceConfig}
+                      disabled={upsertApiConfig.isPending}
+                      variant={hasUnsavedVoiceChanges ? "default" : "outline"}
+                    >
+                      {upsertApiConfig.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          保存中...
+                        </>
+                      ) : hasUnsavedVoiceChanges ? (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          保存生效
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          配置已生效
+                        </>
+                      )}
+                    </Button>
+                    {hasUnsavedVoiceChanges && (
+                      <p className="text-xs text-amber-500 mt-2 text-center">
+                        你有未保存的语音配置更改，请点击上方按钮保存生效
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -799,10 +902,47 @@ export default function Settings() {
                     type="password"
                     placeholder="输入你的 fal.ai API Key"
                     value={falApiKey}
-                    onChange={(e) => setFalApiKey(e.target.value)}
+                    onChange={(e) => {
+                      setFalApiKey(e.target.value);
+                      setHasUnsavedFalChanges(true);
+                    }}
                   />
                   <p className="text-xs text-muted-foreground">成本约 $0.022/张图片</p>
                 </div>
+
+                {/* fal.ai 配置保存生效按钮 */}
+                {falApiKey.length > 0 && (
+                  <div className="pt-3 border-t">
+                    <Button
+                      className="w-full"
+                      onClick={handleSaveFalConfig}
+                      disabled={upsertApiConfig.isPending}
+                      variant={hasUnsavedFalChanges ? "default" : "outline"}
+                    >
+                      {upsertApiConfig.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          保存中...
+                        </>
+                      ) : hasUnsavedFalChanges ? (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          保存生效
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          配置已生效
+                        </>
+                      )}
+                    </Button>
+                    {hasUnsavedFalChanges && (
+                      <p className="text-xs text-amber-500 mt-2 text-center">
+                        你有未保存的 fal.ai 配置更改，请点击上方按钮保存生效
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
