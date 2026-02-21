@@ -8,7 +8,12 @@ import {
   getActiveGirlfriend,
   getUserGirlfriends,
   updateGirlfriend,
-  deleteGirlfriend,
+  softDeleteGirlfriend,
+  softDeleteGirlfriends,
+  restoreGirlfriend,
+  permanentDeleteGirlfriend,
+  getTrashGirlfriends,
+  cleanupExpiredTrash,
   createConversation,
   getUserConversations,
   getConversation,
@@ -133,11 +138,42 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    // 删除女友（级联删除相关消息和自拍）
+    // 软删除女友（移入回收站，7天后自动永久删除）
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await deleteGirlfriend(input.id, ctx.user.id);
+        await softDeleteGirlfriend(input.id, ctx.user.id);
+        return { success: true };
+      }),
+
+    // 批量软删除
+    batchDelete: protectedProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        await softDeleteGirlfriends(input.ids, ctx.user.id);
+        return { success: true, count: input.ids.length };
+      }),
+
+    // 获取回收站列表
+    trash: protectedProcedure.query(async ({ ctx }) => {
+      // 先自动清理超过 7 天的项目
+      await cleanupExpiredTrash(ctx.user.id);
+      return await getTrashGirlfriends(ctx.user.id);
+    }),
+
+    // 从回收站恢复
+    restore: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await restoreGirlfriend(input.id, ctx.user.id);
+        return { success: true };
+      }),
+
+    // 永久删除（从回收站彻底清除）
+    permanentDelete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await permanentDeleteGirlfriend(input.id, ctx.user.id);
         return { success: true };
       }),
 

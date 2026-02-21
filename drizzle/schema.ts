@@ -32,6 +32,7 @@ export const girlfriends = mysqlTable("girlfriends", {
   referenceImageUrl: text("referenceImageUrl").notNull(), // S3 上的参考图片 URL
   referenceImageKey: varchar("referenceImageKey", { length: 500 }).notNull(), // S3 文件 key
   isActive: boolean("isActive").default(true).notNull(), // 是否为当前激活的女友
+  deletedAt: timestamp("deletedAt"), // 软删除时间，null 表示未删除，有值表示已删除（7天后可永久清除）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

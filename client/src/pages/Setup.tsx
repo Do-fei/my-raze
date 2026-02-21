@@ -74,7 +74,7 @@ export default function Setup() {
 
   const deleteGirlfriend = trpc.girlfriend.delete.useMutation({
     onSuccess: () => {
-      toast.success("女友已删除");
+      toast.success("已移入回收站，7天内可恢复");
       setLocation("/");
     },
     onError: (error) => {
@@ -319,7 +319,7 @@ export default function Setup() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>确认删除</AlertDialogTitle>
                         <AlertDialogDescription>
-                          确定要删除 <strong>{name}</strong> 吗？此操作将同时删除所有相关的聊天记录和自拍照片，且无法撤销。
+                          确定要删除 <strong>{name}</strong> 吗？她将被移入回收站，7 天内可以在首页回收站中恢复。
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -328,13 +328,13 @@ export default function Setup() {
                           onClick={handleDelete}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                          确认删除
+                          移入回收站
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
                   <p className="text-xs text-muted-foreground text-center mt-2">
-                    删除后将同时清除所有聊天记录和自拍照片
+                    删除后可在首页回收站中恢复，7 天后自动永久删除
                   </p>
                 </div>
               )}

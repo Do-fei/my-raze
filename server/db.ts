@@ -1,4 +1,4 @@
-import { eq, desc, and, like, sql } from "drizzle-orm";
+import { eq, desc, and, like, sql, isNull, isNotNull, inArray, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -144,7 +144,7 @@ export async function getActiveGirlfriend(userId: number): Promise<Girlfriend | 
   const result = await db
     .select()
     .from(girlfriends)
-    .where(and(eq(girlfriends.userId, userId), eq(girlfriends.isActive, true)))
+    .where(and(eq(girlfriends.userId, userId), eq(girlfriends.isActive, true), isNull(girlfriends.deletedAt)))
     .limit(1);
 
   return result[0];
@@ -157,7 +157,7 @@ export async function getUserGirlfriends(userId: number): Promise<Girlfriend[]> 
   return db
     .select()
     .from(girlfriends)
-    .where(eq(girlfriends.userId, userId))
+    .where(and(eq(girlfriends.userId, userId), isNull(girlfriends.deletedAt)))
     .orderBy(desc(girlfriends.createdAt));
 }
 
@@ -362,9 +362,45 @@ export async function getUserApiConfig(userId: number): Promise<ApiConfig | unde
   return result[0];
 }
 
-// ============ Delete Girlfriend (Cascade) ============
+// ============ Soft Delete Girlfriend (Trash) ============
 
-export async function deleteGirlfriend(id: number, userId: number): Promise<void> {
+/** 软删除：设置 deletedAt 时间戳，保留 7 天可恢复 */
+export async function softDeleteGirlfriend(id: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(girlfriends)
+    .set({ deletedAt: new Date(), isActive: false })
+    .where(and(eq(girlfriends.id, id), eq(girlfriends.userId, userId)));
+}
+
+/** 批量软删除 */
+export async function softDeleteGirlfriends(ids: number[], userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  for (const id of ids) {
+    await db
+      .update(girlfriends)
+      .set({ deletedAt: new Date(), isActive: false })
+      .where(and(eq(girlfriends.id, id), eq(girlfriends.userId, userId)));
+  }
+}
+
+/** 恢复女友：清除 deletedAt */
+export async function restoreGirlfriend(id: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(girlfriends)
+    .set({ deletedAt: null })
+    .where(and(eq(girlfriends.id, id), eq(girlfriends.userId, userId)));
+}
+
+/** 永久删除：级联清除所有关联数据 */
+export async function permanentDeleteGirlfriend(id: number, userId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -377,24 +413,60 @@ export async function deleteGirlfriend(id: number, userId: number): Promise<void
   const convoIds = convos.map((c) => c.id);
 
   // 2. 删除所有对话中的消息
-  if (convoIds.length > 0) {
-    for (const convoId of convoIds) {
-      await db.delete(messages).where(eq(messages.conversationId, convoId));
-    }
+  for (const convoId of convoIds) {
+    await db.delete(messages).where(eq(messages.conversationId, convoId));
   }
 
   // 3. 删除所有对话
-  if (convoIds.length > 0) {
-    for (const convoId of convoIds) {
-      await db.delete(conversations).where(eq(conversations.id, convoId));
-    }
+  for (const convoId of convoIds) {
+    await db.delete(conversations).where(eq(conversations.id, convoId));
   }
 
   // 4. 删除所有自拍
   await db.delete(selfies).where(and(eq(selfies.girlfriendId, id), eq(selfies.userId, userId)));
 
-  // 5. 删除女友
+  // 5. 删除心情记录
+  await db.delete(girlfriendMoods).where(and(eq(girlfriendMoods.girlfriendId, id), eq(girlfriendMoods.userId, userId)));
+
+  // 6. 永久删除女友
   await db.delete(girlfriends).where(and(eq(girlfriends.id, id), eq(girlfriends.userId, userId)));
+}
+
+/** 获取回收站列表（已软删除的女友） */
+export async function getTrashGirlfriends(userId: number): Promise<Girlfriend[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(girlfriends)
+    .where(and(eq(girlfriends.userId, userId), isNotNull(girlfriends.deletedAt)))
+    .orderBy(desc(girlfriends.deletedAt));
+}
+
+/** 清理过期回收站项目（超过 7 天的永久删除） */
+export async function cleanupExpiredTrash(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const expired = await db
+    .select({ id: girlfriends.id })
+    .from(girlfriends)
+    .where(
+      and(
+        eq(girlfriends.userId, userId),
+        isNotNull(girlfriends.deletedAt),
+        lte(girlfriends.deletedAt, sevenDaysAgo)
+      )
+    );
+
+  for (const gf of expired) {
+    await permanentDeleteGirlfriend(gf.id, userId);
+  }
+
+  return expired.length;
 }
 
 // ============ Conversations with Last Message ============

@@ -19,6 +19,11 @@ import {
   Search,
   X,
   Trash2,
+  RotateCcw,
+  CheckSquare,
+  Square,
+  Trash,
+  Undo2,
 } from "lucide-react";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useLocation } from "wouter";
@@ -44,6 +49,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // 心情配置
 const MOOD_CONFIG: Record<string, { emoji: string; label: string; color: string; bgColor: string }> = {
@@ -60,15 +66,25 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const defaultCreatedRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string; isActive: boolean } | null>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
 
   const { data: girlfriends, isLoading: girlfriendsLoading, refetch } = trpc.girlfriend.list.useQuery(
     undefined,
     { enabled: isAuthenticated }
+  );
+
+  // 回收站列表
+  const { data: trashItems, refetch: refetchTrash } = trpc.girlfriend.trash.useQuery(
+    undefined,
+    { enabled: isAuthenticated && trashOpen }
   );
 
   // 历史对话列表
@@ -123,11 +139,49 @@ export default function Home() {
     }
   }, [isAuthenticated, girlfriends]);
 
+  // 软删除（移入回收站）
   const deleteGirlfriend = trpc.girlfriend.delete.useMutation({
     onSuccess: () => {
       refetch();
       setDeleteTarget(null);
-      toast.success("已删除");
+      toast.success("已移入回收站，7天内可恢复");
+    },
+    onError: (error) => {
+      toast.error(`删除失败：${error.message}`);
+    },
+  });
+
+  // 批量软删除
+  const batchDeleteGirlfriends = trpc.girlfriend.batchDelete.useMutation({
+    onSuccess: (data) => {
+      refetch();
+      setBatchDeleteConfirm(false);
+      setBatchMode(false);
+      setSelectedIds(new Set());
+      toast.success(`已将 ${data.count} 位女友移入回收站`);
+    },
+    onError: (error) => {
+      toast.error(`批量删除失败：${error.message}`);
+    },
+  });
+
+  // 恢复女友
+  const restoreGirlfriend = trpc.girlfriend.restore.useMutation({
+    onSuccess: () => {
+      refetch();
+      refetchTrash();
+      toast.success("已恢复");
+    },
+    onError: (error) => {
+      toast.error(`恢复失败：${error.message}`);
+    },
+  });
+
+  // 永久删除
+  const permanentDelete = trpc.girlfriend.permanentDelete.useMutation({
+    onSuccess: () => {
+      refetchTrash();
+      toast.success("已永久删除");
     },
     onError: (error) => {
       toast.error(`删除失败：${error.message}`);
@@ -152,6 +206,30 @@ export default function Home() {
     );
   };
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    if (!girlfriends) return;
+    if (selectedIds.size === girlfriends.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(girlfriends.map((gf) => gf.id)));
+    }
+  };
+
+  // 检查批量删除中是否包含当前激活的女友
+  const hasActiveInSelection = useMemo(() => {
+    if (!girlfriends) return false;
+    return girlfriends.some((gf) => gf.isActive && selectedIds.has(gf.id));
+  }, [girlfriends, selectedIds]);
+
   const formatTime = (date: Date | string) => {
     const d = new Date(date);
     const now = new Date();
@@ -165,6 +243,14 @@ export default function Home() {
     if (diffHours < 24) return `${diffHours}小时前`;
     if (diffDays < 7) return `${diffDays}天前`;
     return d.toLocaleDateString();
+  };
+
+  const getRemainingDays = (deletedAt: Date | string | null) => {
+    if (!deletedAt) return 7;
+    const deleted = new Date(deletedAt);
+    const expiry = new Date(deleted.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const remaining = Math.ceil((expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+    return Math.max(0, remaining);
   };
 
   // 侧边栏展示的对话列表（搜索结果或全部）
@@ -195,7 +281,7 @@ export default function Home() {
             <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
               <Heart className="w-10 h-10 text-primary" />
             </div>
-            <h1 className="text-4xl font-bold text-foreground">AI Girlfriend</h1>
+            <h1 className="text-4xl font-bold text-foreground">My Raze</h1>
             <p className="text-lg text-muted-foreground">
               你的专属虚拟女友，随时陪伴聊天，分享生活点滴
             </p>
@@ -259,7 +345,7 @@ export default function Home() {
       <header className="flex items-center justify-between px-4 py-3 border-b bg-card sticky top-0 z-10">
         <div className="flex items-center gap-2">
           <Heart className="w-6 h-6 text-primary" />
-          <h1 className="text-lg font-bold">AI Girlfriend</h1>
+          <h1 className="text-lg font-bold">My Raze</h1>
         </div>
         <div className="flex items-center gap-1">
           <Button
@@ -269,6 +355,20 @@ export default function Home() {
             title="历史对话"
           >
             <Clock className="w-5 h-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => { setTrashOpen(true); refetchTrash(); }}
+            title="回收站"
+            className="relative"
+          >
+            <Trash className="w-5 h-5" />
+            {trashItems && trashItems.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] rounded-full flex items-center justify-center">
+                {trashItems.length}
+              </span>
+            )}
           </Button>
           <Button variant="ghost" size="icon" onClick={toggleTheme}>
             {theme === "light" ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
@@ -280,11 +380,55 @@ export default function Home() {
       </header>
 
       <div className="p-4 max-w-2xl mx-auto space-y-6">
-        {/* 欢迎信息 */}
-        <div className="space-y-1">
-          <h2 className="text-2xl font-bold">你好，{user?.name || "朋友"} 👋</h2>
-          <p className="text-muted-foreground">选择一位女友开始聊天吧</p>
+        {/* 欢迎信息 + 批量操作 */}
+        <div className="flex items-start justify-between">
+          <div className="space-y-1">
+            <h2 className="text-2xl font-bold">你好，{user?.name || "朋友"} 👋</h2>
+            <p className="text-muted-foreground">选择一位女友开始聊天吧</p>
+          </div>
+          {girlfriends && girlfriends.length > 1 && (
+            <Button
+              variant={batchMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setBatchMode(!batchMode);
+                setSelectedIds(new Set());
+              }}
+            >
+              {batchMode ? (
+                <><X className="w-4 h-4 mr-1" />取消</>
+              ) : (
+                <><CheckSquare className="w-4 h-4 mr-1" />批量管理</>
+              )}
+            </Button>
+          )}
         </div>
+
+        {/* 批量操作工具栏 */}
+        {batchMode && girlfriends && girlfriends.length > 0 && (
+          <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+            <Button variant="outline" size="sm" onClick={selectAll}>
+              {selectedIds.size === girlfriends.length ? (
+                <><CheckSquare className="w-4 h-4 mr-1" />取消全选</>
+              ) : (
+                <><Square className="w-4 h-4 mr-1" />全选</>
+              )}
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              已选 {selectedIds.size} / {girlfriends.length}
+            </span>
+            <div className="flex-1" />
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={selectedIds.size === 0}
+              onClick={() => setBatchDeleteConfirm(true)}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              删除选中
+            </Button>
+          </div>
+        )}
 
         {/* 女友列表 */}
         {girlfriendsLoading || ensureDefault.isPending ? (
@@ -314,16 +458,27 @@ export default function Home() {
             {girlfriends.map((gf) => {
               const mood = moodMap[gf.id];
               const moodInfo = mood ? MOOD_CONFIG[mood.mood] : null;
+              const isSelected = selectedIds.has(gf.id);
 
               return (
                 <Card
                   key={gf.id}
                   className={`transition-all hover:shadow-md ${
                     gf.isActive ? "ring-2 ring-primary" : ""
-                  }`}
+                  } ${isSelected ? "ring-2 ring-destructive bg-destructive/5" : ""}`}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-center gap-4">
+                      {/* 批量选择复选框 */}
+                      {batchMode && (
+                        <div className="flex-shrink-0">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelect(gf.id)}
+                          />
+                        </div>
+                      )}
+
                       {/* 头像 */}
                       <div className="relative flex-shrink-0">
                         <Avatar className="w-16 h-16">
@@ -370,32 +525,34 @@ export default function Home() {
                       </div>
 
                       {/* 操作按钮 */}
-                      <div className="flex flex-col gap-2 flex-shrink-0">
-                        <Button
-                          size="sm"
-                          onClick={() => handleStartChat(gf.id)}
-                        >
-                          <MessageCircle className="w-4 h-4 mr-1" />
-                          聊天
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setLocation(`/setup/${gf.id}`)}
-                        >
-                          <Edit className="w-4 h-4 mr-1" />
-                          编辑
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
-                          onClick={() => setDeleteTarget({ id: gf.id, name: gf.name })}
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" />
-                          删除
-                        </Button>
-                      </div>
+                      {!batchMode && (
+                        <div className="flex flex-col gap-2 flex-shrink-0">
+                          <Button
+                            size="sm"
+                            onClick={() => handleStartChat(gf.id)}
+                          >
+                            <MessageCircle className="w-4 h-4 mr-1" />
+                            聊天
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setLocation(`/setup/${gf.id}`)}
+                          >
+                            <Edit className="w-4 h-4 mr-1" />
+                            编辑
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+                            onClick={() => setDeleteTarget({ id: gf.id, name: gf.name, isActive: gf.isActive })}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            删除
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -405,7 +562,7 @@ export default function Home() {
         )}
 
         {/* 添加新女友按钮 */}
-        {girlfriends && girlfriends.length > 0 && (
+        {girlfriends && girlfriends.length > 0 && !batchMode && (
           <Button
             variant="outline"
             className="w-full border-dashed"
@@ -417,7 +574,7 @@ export default function Home() {
         )}
 
         {/* 快捷入口 */}
-        {girlfriends && girlfriends.length > 0 && (
+        {girlfriends && girlfriends.length > 0 && !batchMode && (
           <div className="grid grid-cols-2 gap-3">
             <Card
               className="cursor-pointer hover:shadow-md transition-all"
@@ -495,7 +652,6 @@ export default function Home() {
           </SheetHeader>
 
           <ScrollArea className="h-[calc(100vh-160px)]">
-            {/* 搜索加载状态 */}
             {searchLoading && isSearchMode && (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-5 h-5 animate-spin text-primary mr-2" />
@@ -503,7 +659,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* 搜索无结果 */}
             {isSearchMode && !searchLoading && (!searchResults || searchResults.length === 0) && (
               <div className="flex flex-col items-center justify-center py-16 text-center px-4">
                 <Search className="w-12 h-12 text-muted-foreground mb-3" />
@@ -512,7 +667,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* 无对话记录 */}
             {!isSearchMode && (!conversationsWithDetails || conversationsWithDetails.length === 0) && (
               <div className="flex flex-col items-center justify-center py-16 text-center px-4">
                 <MessageCircle className="w-12 h-12 text-muted-foreground mb-3" />
@@ -521,7 +675,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* 对话列表 */}
             {displayConversations && displayConversations.length > 0 && (
               <div>
                 {isSearchMode && (
@@ -563,7 +716,6 @@ export default function Home() {
                               : formatTime(convo.updatedAt)}
                           </span>
                         </div>
-                        {/* 搜索模式显示匹配的消息 */}
                         {isSearchMode && (convo as any).matchedMessage ? (
                           <p className="text-xs text-primary/80 truncate mt-0.5">
                             🔍 {(convo as any).matchedMessage}
@@ -587,13 +739,94 @@ export default function Home() {
         </SheetContent>
       </Sheet>
 
-      {/* 删除确认弹窗 */}
+      {/* 回收站侧边栏 */}
+      <Sheet open={trashOpen} onOpenChange={setTrashOpen}>
+        <SheetContent side="right" className="w-[320px] sm:max-w-[360px] p-0">
+          <SheetHeader className="p-4 pb-3 border-b">
+            <SheetTitle className="flex items-center gap-2">
+              <Trash className="w-5 h-5 text-destructive" />
+              回收站
+            </SheetTitle>
+            <SheetDescription className="text-xs">
+              已删除的女友将保留 7 天，之后自动永久删除
+            </SheetDescription>
+          </SheetHeader>
+
+          <ScrollArea className="h-[calc(100vh-120px)]">
+            {!trashItems || trashItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                <Trash className="w-12 h-12 text-muted-foreground mb-3" />
+                <p className="text-sm text-muted-foreground">回收站是空的</p>
+                <p className="text-xs text-muted-foreground mt-1">删除的女友会在这里保留 7 天</p>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {trashItems.map((gf) => {
+                  const remaining = getRemainingDays(gf.deletedAt);
+                  return (
+                    <div key={gf.id} className="px-4 py-3 flex items-center gap-3">
+                      <Avatar className="w-12 h-12 flex-shrink-0 opacity-60">
+                        <AvatarImage src={gf.referenceImageUrl} alt={gf.name} />
+                        <AvatarFallback>{gf.name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{gf.name}</p>
+                        <p className="text-xs text-destructive">
+                          {remaining > 0 ? `${remaining} 天后永久删除` : "即将永久删除"}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1.5 flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => restoreGirlfriend.mutate({ id: gf.id })}
+                          disabled={restoreGirlfriend.isPending}
+                        >
+                          <Undo2 className="w-3 h-3 mr-1" />
+                          恢复
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs text-destructive hover:text-destructive border-destructive/30"
+                          onClick={() => permanentDelete.mutate({ id: gf.id })}
+                          disabled={permanentDelete.isPending}
+                        >
+                          <Trash2 className="w-3 h-3 mr-1" />
+                          彻底删除
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
+
+      {/* 单个删除确认弹窗 */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>
-              你确定要删除 <span className="font-semibold text-foreground">{deleteTarget?.name}</span> 吗？删除后将清除她的所有聊天记录和自拍照片，此操作不可撤销。
+            <AlertDialogTitle>
+              {deleteTarget?.isActive ? "⚠️ 删除当前女友" : "确认删除"}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                {deleteTarget?.isActive && (
+                  <p className="text-amber-600 dark:text-amber-400 font-medium">
+                    你正在删除当前正在聊天的女友「{deleteTarget.name}」，删除后需要重新选择一位女友才能继续聊天。
+                  </p>
+                )}
+                <p>
+                  {deleteTarget?.isActive ? "确定要继续吗？" : (
+                    <>你确定要删除 <span className="font-semibold text-foreground">{deleteTarget?.name}</span> 吗？</>
+                  )}
+                  她将被移入回收站，7 天内可以恢复。
+                </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -606,7 +839,44 @@ export default function Home() {
               {deleteGirlfriend.isPending ? (
                 <><Loader2 className="w-4 h-4 mr-1 animate-spin" />删除中...</>
               ) : (
-                "确认删除"
+                "移入回收站"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 批量删除确认弹窗 */}
+      <AlertDialog open={batchDeleteConfirm} onOpenChange={setBatchDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {hasActiveInSelection ? "⚠️ 批量删除包含当前女友" : "确认批量删除"}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                {hasActiveInSelection && (
+                  <p className="text-amber-600 dark:text-amber-400 font-medium">
+                    选中的女友中包含当前正在聊天的对象，删除后需要重新选择一位女友才能继续聊天。
+                  </p>
+                )}
+                <p>
+                  你确定要删除选中的 <span className="font-semibold text-foreground">{selectedIds.size}</span> 位女友吗？她们将被移入回收站，7 天内可以恢复。
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => batchDeleteGirlfriends.mutate({ ids: Array.from(selectedIds) })}
+              disabled={batchDeleteGirlfriends.isPending}
+            >
+              {batchDeleteGirlfriends.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-1 animate-spin" />删除中...</>
+              ) : (
+                `移入回收站 (${selectedIds.size})`
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
