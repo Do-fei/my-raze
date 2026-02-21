@@ -71,6 +71,9 @@ export default function Settings() {
   const [showFishAudioModels, setShowFishAudioModels] = useState(false);
   const [fishAudioSearch, setFishAudioSearch] = useState("");
 
+  // LLM 配置变更追踪
+  const [hasUnsavedLlmChanges, setHasUnsavedLlmChanges] = useState(false);
+
   // 全局提示词 states
   const [globalPrompt, setGlobalPrompt] = useState("");
   const [replyLanguage, setReplyLanguage] = useState("");
@@ -263,7 +266,34 @@ export default function Settings() {
   const handleSelectModel = (modelId: string) => {
     setSelectedModel(modelId);
     setShowModelList(false);
-    toast.success(`已选择模型：${modelId}`);
+    setHasUnsavedLlmChanges(true);
+    toast.info(`已选择模型：${modelId}，请点击"保存生效"确认`);
+  };
+
+  const handleSaveLlmConfig = () => {
+    upsertApiConfig.mutate(
+      {
+        falApiKey: falApiKey || undefined,
+        llmApiKey: openRouterKey || undefined,
+        llmModel: selectedModel || undefined,
+        ttsProvider,
+        elevenlabsApiKey: elevenlabsApiKey || undefined,
+        elevenlabsVoiceId: elevenlabsVoiceId || undefined,
+        elevenlabsVoiceName: elevenlabsVoiceName || undefined,
+        fishAudioApiKey: fishAudioApiKey || undefined,
+        fishAudioModelId: fishAudioModelId || undefined,
+        fishAudioModelName: fishAudioModelName || undefined,
+        globalPrompt: globalPrompt || null,
+        replyLanguage: replyLanguage || null,
+        replyLengthLimit: replyLengthLimit || null,
+      },
+      {
+        onSuccess: () => {
+          setHasUnsavedLlmChanges(false);
+          toast.success("LLM 配置已保存生效");
+        },
+      }
+    );
   };
 
   const handleSelectElevenLabsVoice = (voice: ElevenLabsVoice) => {
@@ -803,7 +833,10 @@ export default function Settings() {
                     type="password"
                     placeholder="sk-or-v1-xxxxxxxxxxxx"
                     value={openRouterKey}
-                    onChange={(e) => setOpenRouterKey(e.target.value)}
+                    onChange={(e) => {
+                      setOpenRouterKey(e.target.value);
+                      setHasUnsavedLlmChanges(true);
+                    }}
                   />
                   <p className="text-xs text-muted-foreground">
                     如果不填写，将使用内置的免费 LLM API（Gemini 2.5 Flash）
@@ -918,6 +951,39 @@ export default function Settings() {
                         ))
                       )}
                     </div>
+                  </div>
+                )}
+                {/* LLM 配置保存生效按钮 */}
+                {(openRouterKey.length > 0 || selectedModel) && (
+                  <div className="pt-3 border-t">
+                    <Button
+                      className="w-full"
+                      onClick={handleSaveLlmConfig}
+                      disabled={upsertApiConfig.isPending}
+                      variant={hasUnsavedLlmChanges ? "default" : "outline"}
+                    >
+                      {upsertApiConfig.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          保存中...
+                        </>
+                      ) : hasUnsavedLlmChanges ? (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          保存生效
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          配置已生效
+                        </>
+                      )}
+                    </Button>
+                    {hasUnsavedLlmChanges && (
+                      <p className="text-xs text-amber-500 mt-2 text-center">
+                        你有未保存的更改，请点击上方按钮保存生效
+                      </p>
+                    )}
                   </div>
                 )}
               </CardContent>

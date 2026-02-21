@@ -157,3 +157,7 @@
 - [x] 后端：uploadAvatar 大小限制从 5MB 调整为 10MB
 - [x] 前端：Setup.tsx 大小限制从 5MB 调整为 10MB
 - [x] 测试：更新 avatar.test.ts 中的大小校验测试（85 个测试全部通过）
+
+## v2.4 OpenRouter 配置保存生效按钮
+- [x] 确认 OpenRouter 配置流程：填 Key → 加载模型列表 → 选择模型
+- [x] 添加"保存生效"按钮让用户确认选择已生效（85 个测试全部通过）
