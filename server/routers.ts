@@ -136,12 +136,45 @@ export const appRouter = router({
           interests: z.string().optional(),
           customPrompt: z.string().max(300).nullable().optional(),
           isActive: z.boolean().optional(),
+          avatarUrl: z.string().nullable().optional(),
+          avatarKey: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
         await updateGirlfriend(id, ctx.user.id, data);
         return { success: true };
+      }),
+
+    // 上传女友头像
+    uploadAvatar: protectedProcedure
+      .input(
+        z.object({
+          girlfriendId: z.number(),
+          imageBase64: z.string(), // Base64 编码的图片
+          mimeType: z.enum(["image/jpeg", "image/png", "image/gif", "image/webp"]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        // 验证文件大小（Base64 编码后约为原始大小的 4/3，5MB 原始文件 ≈ 6.67MB Base64）
+        const maxBase64Size = 5 * 1024 * 1024 * 4 / 3; // ~6.67MB
+        if (input.imageBase64.length > maxBase64Size) {
+          throw new Error("图片文件过大，请选择 5MB 以内的图片");
+        }
+
+        const imageBuffer = Buffer.from(input.imageBase64, "base64");
+        const ext = input.mimeType.split("/")[1] === "jpeg" ? "jpg" : input.mimeType.split("/")[1];
+        const fileKey = `avatar-${ctx.user.id}-${input.girlfriendId}-${nanoid()}.${ext}`;
+
+        const { url: avatarUrl } = await storagePut(fileKey, imageBuffer, input.mimeType);
+
+        // 更新女友记录
+        await updateGirlfriend(input.girlfriendId, ctx.user.id, {
+          avatarUrl,
+          avatarKey: fileKey,
+        });
+
+        return { avatarUrl, avatarKey: fileKey };
       }),
 
     // 软删除女友（移入回收站，7天后自动永久删除）

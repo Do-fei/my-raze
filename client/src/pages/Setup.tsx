@@ -4,8 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { Loader2, Upload, ArrowLeft, Trash2, ChevronDown, ChevronUp, Eye, Brain } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Loader2, Upload, ArrowLeft, Trash2, ChevronDown, ChevronUp, Eye, Brain, Camera, X } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import {
@@ -19,6 +19,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+
+const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
 
 export default function Setup() {
   const [, setLocation] = useLocation();
@@ -35,6 +38,13 @@ export default function Setup() {
   const [customPrompt, setCustomPrompt] = useState("");
   const [showCustomPrompt, setShowCustomPrompt] = useState(false);
   const [showPromptPreview, setShowPromptPreview] = useState(false);
+
+  // 头像相关状态
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [existingAvatarUrl, setExistingAvatarUrl] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // 获取女友列表用于编辑
   const { data: girlfriends } = trpc.girlfriend.list.useQuery(undefined, {
@@ -55,6 +65,7 @@ export default function Setup() {
         setInterests(gf.interests || "");
         setExistingImageUrl(gf.referenceImageUrl);
         setCustomPrompt(gf.customPrompt || "");
+        setExistingAvatarUrl(gf.avatarUrl || null);
         if (gf.customPrompt) setShowCustomPrompt(true);
       }
     }
@@ -77,6 +88,20 @@ export default function Setup() {
     },
     onError: (error) => {
       toast.error(`更新失败：${error.message}`);
+    },
+  });
+
+  const uploadAvatar = trpc.girlfriend.uploadAvatar.useMutation({
+    onSuccess: (data) => {
+      setExistingAvatarUrl(data.avatarUrl);
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      setIsUploadingAvatar(false);
+      toast.success("头像上传成功！");
+    },
+    onError: (error) => {
+      setIsUploadingAvatar(false);
+      toast.error(`头像上传失败：${error.message}`);
     },
   });
 
@@ -105,6 +130,62 @@ export default function Setup() {
         setImagePreview(reader.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  // 头像选择处理
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 格式校验
+    if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+      toast.error("不支持的图片格式，请选择 JPG、PNG、GIF 或 WebP 格式");
+      return;
+    }
+
+    // 大小校验
+    if (file.size > MAX_AVATAR_SIZE) {
+      toast.error(`图片文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），请选择 5MB 以内的图片`);
+      return;
+    }
+
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAvatarPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 上传头像
+  const handleUploadAvatar = () => {
+    if (!avatarFile || !editId) return;
+
+    setIsUploadingAvatar(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      uploadAvatar.mutate({
+        girlfriendId: editId,
+        imageBase64: base64,
+        mimeType: avatarFile.type as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+      });
+    };
+    reader.readAsDataURL(avatarFile);
+  };
+
+  // 移除头像（设为 null）
+  const handleRemoveAvatar = () => {
+    if (editId) {
+      updateGirlfriend.mutate({
+        id: editId,
+        avatarUrl: null,
+        avatarKey: null,
+      });
+      setExistingAvatarUrl(null);
+      setAvatarFile(null);
+      setAvatarPreview(null);
     }
   };
 
@@ -152,6 +233,7 @@ export default function Setup() {
   const isEditing = !!editId;
   const isPending = createGirlfriend.isPending || updateGirlfriend.isPending;
   const displayImage = imagePreview || existingImageUrl;
+  const displayAvatar = avatarPreview || existingAvatarUrl;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 dark:from-[oklch(0.16_0.02_330)] dark:via-[oklch(0.14_0.015_320)] dark:to-[oklch(0.16_0.02_300)] p-3 sm:p-4" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
@@ -174,6 +256,107 @@ export default function Setup() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* 头像上传区域 - 编辑模式显示 */}
+              {isEditing && (
+                <div className="space-y-2">
+                  <Label>头像照片</Label>
+                  <p className="text-xs text-muted-foreground">
+                    上传一张头像照片，将在首页卡片和聊天页展示（支持 JPG/PNG/GIF/WebP，最大 5MB）
+                  </p>
+                  <div className="flex items-center gap-4">
+                    {/* 头像预览 */}
+                    <div
+                      className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-border flex-shrink-0 cursor-pointer group"
+                      onClick={() => avatarInputRef.current?.click()}
+                    >
+                      {displayAvatar ? (
+                        <>
+                          <img
+                            src={displayAvatar}
+                            alt="Avatar"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Camera className="w-5 h-5 text-white" />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="w-full h-full bg-muted flex flex-col items-center justify-center gap-0.5">
+                          <Camera className="w-5 h-5 text-muted-foreground" />
+                          <span className="text-[10px] text-muted-foreground">上传</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 操作按钮 */}
+                    <div className="flex flex-col gap-2">
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        className="hidden"
+                        onChange={handleAvatarChange}
+                      />
+                      {avatarFile ? (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleUploadAvatar}
+                            disabled={isUploadingAvatar}
+                          >
+                            {isUploadingAvatar ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                                上传中...
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="w-3.5 h-3.5 mr-1" />
+                                确认上传
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setAvatarFile(null);
+                              setAvatarPreview(null);
+                            }}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => avatarInputRef.current?.click()}
+                        >
+                          <Camera className="w-3.5 h-3.5 mr-1" />
+                          {displayAvatar ? "更换头像" : "选择图片"}
+                        </Button>
+                      )}
+                      {existingAvatarUrl && !avatarFile && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive text-xs"
+                          onClick={handleRemoveAvatar}
+                        >
+                          <X className="w-3 h-3 mr-1" />
+                          移除头像
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* 参考照片上传 */}
               <div className="space-y-2">
                 <Label htmlFor="image">
@@ -226,7 +409,7 @@ export default function Setup() {
                 </div>
                 {isEditing && (
                   <p className="text-xs text-muted-foreground text-center">
-                    编辑模式下暂不支持更换照片，如需更换请创建新女友
+                    编辑模式下暂不支持更换参考照片，如需更换请创建新女友
                   </p>
                 )}
               </div>
@@ -306,7 +489,7 @@ export default function Setup() {
                       <Label htmlFor="customPrompt">专属提示词</Label>
                       <Textarea
                         id="customPrompt"
-                        placeholder="例如：说话带点傲娇，偶尔用日语词汇，喜欢用“哼”开头..."
+                        placeholder="例如：说话带点傲娇，偶尔用日语词汇，喜欢用哼开头..."
                         value={customPrompt}
                         onChange={(e) => setCustomPrompt(e.target.value)}
                         rows={3}

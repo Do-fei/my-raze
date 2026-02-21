@@ -344,7 +344,7 @@ export default function Chat() {
         </Button>
 
         <Avatar className="w-8 h-8 sm:w-10 sm:h-10">
-          <AvatarImage src={girlfriend.referenceImageUrl} alt={girlfriend.name} />
+          <AvatarImage src={girlfriend.avatarUrl || girlfriend.referenceImageUrl} alt={girlfriend.name} />
           <AvatarFallback>{girlfriend.name[0]}</AvatarFallback>
         </Avatar>
 
@@ -441,7 +441,7 @@ export default function Chat() {
             >
               {msg.role === "assistant" && (
                 <Avatar className="w-8 h-8 flex-shrink-0">
-                  <AvatarImage src={girlfriend.referenceImageUrl} alt={girlfriend.name} />
+                  <AvatarImage src={girlfriend.avatarUrl || girlfriend.referenceImageUrl} alt={girlfriend.name} />
                   <AvatarFallback>{girlfriend.name[0]}</AvatarFallback>
                 </Avatar>
               )}
@@ -499,7 +499,7 @@ export default function Chat() {
         {sendMessage.isPending && (
           <div className="flex gap-3">
             <Avatar className="w-8 h-8 flex-shrink-0">
-              <AvatarImage src={girlfriend.referenceImageUrl} alt={girlfriend.name} />
+              <AvatarImage src={girlfriend.avatarUrl || girlfriend.referenceImageUrl} alt={girlfriend.name} />
               <AvatarFallback>{girlfriend.name[0]}</AvatarFallback>
             </Avatar>
             <div className="bg-muted rounded-2xl px-4 py-3">
@@ -515,7 +515,7 @@ export default function Chat() {
         {generateSelfie.isPending && (
           <div className="flex gap-3">
             <Avatar className="w-8 h-8 flex-shrink-0">
-              <AvatarImage src={girlfriend.referenceImageUrl} alt={girlfriend.name} />
+              <AvatarImage src={girlfriend.avatarUrl || girlfriend.referenceImageUrl} alt={girlfriend.name} />
               <AvatarFallback>{girlfriend.name[0]}</AvatarFallback>
             </Avatar>
             <div className="bg-muted rounded-2xl px-4 py-3">

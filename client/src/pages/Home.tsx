@@ -518,7 +518,7 @@ export default function Home() {
                       {/* 头像 */}
                       <div className="relative flex-shrink-0">
                         <Avatar className="w-12 h-12 sm:w-16 sm:h-16">
-                          <AvatarImage src={gf.referenceImageUrl} alt={gf.name} />
+                          <AvatarImage src={gf.avatarUrl || gf.referenceImageUrl} alt={gf.name} />
                           <AvatarFallback className="text-lg">{gf.name[0]}</AvatarFallback>
                         </Avatar>
                         {/* 心情气泡 */}
