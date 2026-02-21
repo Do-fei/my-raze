@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import {
   ArrowLeft, Loader2, Save, Volume2, Sun, Moon, Search, Check,
   ExternalLink, Zap, Mic, Music, Globe, Brain, ChevronDown, ChevronUp, Sparkles, Eye,
+  Star, CheckCircle, XCircle, AlertCircle,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -79,6 +80,16 @@ export default function Settings() {
 
   // fal.ai 配置变更追踪
   const [hasUnsavedFalChanges, setHasUnsavedFalChanges] = useState(false);
+
+  // AI 行为设定变更追踪
+  const [hasUnsavedAiChanges, setHasUnsavedAiChanges] = useState(false);
+
+  // 模型收藏列表（localStorage 存储）
+  const [favoriteModels, setFavoriteModels] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("favorite-models") || "[]");
+    } catch { return []; }
+  });
 
   // 全局提示词 states
   const [globalPrompt, setGlobalPrompt] = useState("");
@@ -344,6 +355,105 @@ export default function Settings() {
     );
   };
 
+  const handleSaveAiConfig = () => {
+    upsertApiConfig.mutate(
+      {
+        falApiKey: falApiKey || undefined,
+        llmApiKey: openRouterKey || undefined,
+        llmModel: selectedModel || undefined,
+        ttsProvider,
+        elevenlabsApiKey: elevenlabsApiKey || undefined,
+        elevenlabsVoiceId: elevenlabsVoiceId || undefined,
+        elevenlabsVoiceName: elevenlabsVoiceName || undefined,
+        fishAudioApiKey: fishAudioApiKey || undefined,
+        fishAudioModelId: fishAudioModelId || undefined,
+        fishAudioModelName: fishAudioModelName || undefined,
+        globalPrompt: globalPrompt || null,
+        replyLanguage: replyLanguage || null,
+        replyLengthLimit: replyLengthLimit || null,
+      },
+      {
+        onSuccess: () => {
+          setHasUnsavedAiChanges(false);
+          toast.success("AI 行为设定已保存生效");
+        },
+      }
+    );
+  };
+
+  // 模型收藏操作
+  const toggleFavoriteModel = (modelId: string) => {
+    setFavoriteModels(prev => {
+      const next = prev.includes(modelId)
+        ? prev.filter(id => id !== modelId)
+        : [...prev, modelId];
+      localStorage.setItem("favorite-models", JSON.stringify(next));
+      toast.success(next.includes(modelId) ? `已收藏模型` : `已取消收藏`);
+      return next;
+    });
+  };
+
+  // API Key 有效性状态派生
+  const openRouterKeyStatus = useMemo(() => {
+    if (!openRouterKey || openRouterKey.length <= 10) return "empty";
+    if (modelsLoading) return "loading";
+    if (modelsError) return "invalid";
+    if (modelsData) return "valid";
+    return "loading";
+  }, [openRouterKey, modelsLoading, modelsError, modelsData]);
+
+  const elevenLabsKeyStatus = useMemo(() => {
+    if (!elevenlabsApiKey || elevenlabsApiKey.length <= 10) return "empty";
+    if (elevenLabsLoading) return "loading";
+    if (elevenLabsError) return "invalid";
+    if (elevenLabsData) return "valid";
+    return "loading";
+  }, [elevenlabsApiKey, elevenLabsLoading, elevenLabsError, elevenLabsData]);
+
+  const fishAudioKeyStatus = useMemo(() => {
+    if (!fishAudioApiKey || fishAudioApiKey.length <= 10) return "empty";
+    if (fishAudioLoading) return "loading";
+    if (fishAudioError) return "invalid";
+    if (fishAudioData) return "valid";
+    return "loading";
+  }, [fishAudioApiKey, fishAudioLoading, fishAudioError, fishAudioData]);
+
+  // fal.ai key 简单格式验证（无对应的模型列表 API，仅检查格式）
+  const falKeyStatus = useMemo(() => {
+    if (!falApiKey || falApiKey.length === 0) return "empty";
+    if (falApiKey.length < 10) return "invalid";
+    return "valid";
+  }, [falApiKey]);
+
+  // API Key 状态指示器组件
+  const KeyStatusIndicator = ({ status }: { status: string }) => {
+    switch (status) {
+      case "valid":
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-green-600">
+            <CheckCircle className="w-3.5 h-3.5" />
+            已验证
+          </span>
+        );
+      case "invalid":
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-red-500">
+            <XCircle className="w-3.5 h-3.5" />
+            无效
+          </span>
+        );
+      case "loading":
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            验证中...
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
   const handleSaveFalConfig = () => {
     upsertApiConfig.mutate(
       {
@@ -500,7 +610,10 @@ export default function Settings() {
                 {ttsProvider === "elevenlabs" && (
                   <div className="space-y-4 pt-2 border-t">
                     <div className="space-y-2">
-                      <Label htmlFor="elevenlabsKey">ElevenLabs API Key</Label>
+                      <Label htmlFor="elevenlabsKey" className="flex items-center justify-between">
+                        <span>ElevenLabs API Key</span>
+                        <KeyStatusIndicator status={elevenLabsKeyStatus} />
+                      </Label>
                       <Input
                         id="elevenlabsKey"
                         type="password"
@@ -664,7 +777,10 @@ export default function Settings() {
                 {ttsProvider === "fishaudio" && (
                   <div className="space-y-4 pt-2 border-t">
                     <div className="space-y-2">
-                      <Label htmlFor="fishAudioKey">Fish Audio API Key</Label>
+                      <Label htmlFor="fishAudioKey" className="flex items-center justify-between">
+                        <span>Fish Audio API Key</span>
+                        <KeyStatusIndicator status={fishAudioKeyStatus} />
+                      </Label>
                       <Input
                         id="fishAudioKey"
                         type="password"
@@ -896,7 +1012,10 @@ export default function Settings() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="falApiKey">fal.ai API Key</Label>
+                  <Label htmlFor="falApiKey" className="flex items-center justify-between">
+                    <span>fal.ai API Key</span>
+                    <KeyStatusIndicator status={falKeyStatus} />
+                  </Label>
                   <Input
                     id="falApiKey"
                     type="password"
@@ -967,7 +1086,10 @@ export default function Settings() {
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="openRouterKey">OpenRouter API Key</Label>
+                  <Label htmlFor="openRouterKey" className="flex items-center justify-between">
+                    <span>OpenRouter API Key</span>
+                    <KeyStatusIndicator status={openRouterKeyStatus} />
+                  </Label>
                   <Input
                     id="openRouterKey"
                     type="password"
@@ -1048,48 +1170,95 @@ export default function Settings() {
                     </div>
 
                     <div className="max-h-80 overflow-y-auto rounded-lg border divide-y">
-                      {groupedModels.length === 0 ? (
-                        <div className="p-4 text-center text-sm text-muted-foreground">
-                          没有找到匹配的模型
-                        </div>
-                      ) : (
-                        groupedModels.map(([provider, models]) => (
-                          <div key={provider}>
-                            <div className="px-3 py-2 bg-muted/30 text-xs font-semibold text-muted-foreground uppercase sticky top-0">
-                              {provider} ({models.length})
+                      {/* 收藏模型置顶显示 */}
+                      {(() => {
+                        const favModels = filteredModels.filter((m: ModelInfo) => favoriteModels.includes(m.id));
+                        const nonFavModels = filteredModels.filter((m: ModelInfo) => !favoriteModels.includes(m.id));
+                        const nonFavGrouped: Record<string, ModelInfo[]> = {};
+                        for (const model of nonFavModels) {
+                          if (!nonFavGrouped[model.provider]) nonFavGrouped[model.provider] = [];
+                          nonFavGrouped[model.provider].push(model);
+                        }
+                        const nonFavEntries = Object.entries(nonFavGrouped).sort(([a], [b]) => a.localeCompare(b));
+
+                        if (favModels.length === 0 && nonFavEntries.length === 0) {
+                          return (
+                            <div className="p-4 text-center text-sm text-muted-foreground">
+                              没有找到匹配的模型
                             </div>
-                            {models.map((model: ModelInfo) => (
+                          );
+                        }
+
+                        const renderModelItem = (model: ModelInfo) => (
+                          <div
+                            key={model.id}
+                            className={`w-full text-left px-3 py-2.5 hover:bg-accent/50 transition-colors flex items-center justify-between gap-2 ${
+                              selectedModel === model.id ? "bg-primary/10 border-l-2 border-primary" : ""
+                            }`}
+                          >
+                            <button
+                              className="min-w-0 flex-1 text-left"
+                              onClick={() => handleSelectModel(model.id)}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium truncate">{model.name}</span>
+                                {selectedModel === model.id && (
+                                  <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground font-mono truncate">
+                                {model.id}
+                              </p>
+                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="text-right">
+                                <p className="text-xs text-muted-foreground">
+                                  {(model.contextLength / 1000).toFixed(0)}K
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {formatPrice(model.pricing.prompt)}
+                                </p>
+                              </div>
                               <button
-                                key={model.id}
-                                className={`w-full text-left px-3 py-2.5 hover:bg-accent/50 transition-colors flex items-center justify-between gap-2 ${
-                                  selectedModel === model.id ? "bg-primary/10 border-l-2 border-primary" : ""
-                                }`}
-                                onClick={() => handleSelectModel(model.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavoriteModel(model.id);
+                                }}
+                                className="p-1 rounded hover:bg-accent transition-colors"
+                                title={favoriteModels.includes(model.id) ? "取消收藏" : "收藏模型"}
                               >
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium truncate">{model.name}</span>
-                                    {selectedModel === model.id && (
-                                      <Check className="w-3.5 h-3.5 text-primary shrink-0" />
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-muted-foreground font-mono truncate">
-                                    {model.id}
-                                  </p>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <p className="text-xs text-muted-foreground">
-                                    {(model.contextLength / 1000).toFixed(0)}K
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {formatPrice(model.pricing.prompt)}
-                                  </p>
-                                </div>
+                                <Star className={`w-3.5 h-3.5 ${
+                                  favoriteModels.includes(model.id)
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "text-muted-foreground"
+                                }`} />
                               </button>
-                            ))}
+                            </div>
                           </div>
-                        ))
-                      )}
+                        );
+
+                        return (
+                          <>
+                            {favModels.length > 0 && (
+                              <div>
+                                <div className="px-3 py-2 bg-amber-500/10 text-xs font-semibold text-amber-600 uppercase sticky top-0 flex items-center gap-1.5">
+                                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                  收藏模型 ({favModels.length})
+                                </div>
+                                {favModels.map(renderModelItem)}
+                              </div>
+                            )}
+                            {nonFavEntries.map(([provider, models]) => (
+                              <div key={provider}>
+                                <div className="px-3 py-2 bg-muted/30 text-xs font-semibold text-muted-foreground uppercase sticky top-0">
+                                  {provider} ({models.length})
+                                </div>
+                                {models.map(renderModelItem)}
+                              </div>
+                            ))}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -1148,7 +1317,10 @@ export default function Settings() {
                     id="globalPrompt"
                     placeholder="例如：回复要简短可爱，多用表情，不要说教..."
                     value={globalPrompt}
-                    onChange={(e) => setGlobalPrompt(e.target.value)}
+                    onChange={(e) => {
+                      setGlobalPrompt(e.target.value);
+                      setHasUnsavedAiChanges(true);
+                    }}
                     rows={4}
                     maxLength={500}
                     className="resize-none"
@@ -1174,6 +1346,7 @@ export default function Settings() {
                         key={tpl.label}
                         onClick={() => {
                           setGlobalPrompt(tpl.text);
+                          setHasUnsavedAiChanges(true);
                           toast.success(`已应用模板：${tpl.label}`);
                         }}
                         className={`text-left p-2.5 rounded-lg border text-sm transition-all hover:border-primary/40 hover:bg-primary/5 ${
@@ -1204,7 +1377,10 @@ export default function Settings() {
                           id="replyLanguage"
                           placeholder="默认中文，可设置为英文、日文等"
                           value={replyLanguage}
-                          onChange={(e) => setReplyLanguage(e.target.value)}
+                          onChange={(e) => {
+                            setReplyLanguage(e.target.value);
+                            setHasUnsavedAiChanges(true);
+                          }}
                           maxLength={50}
                         />
                       </div>
@@ -1214,11 +1390,46 @@ export default function Settings() {
                           id="replyLengthLimit"
                           placeholder="例如：50字以内、2-3句话、不限制"
                           value={replyLengthLimit}
-                          onChange={(e) => setReplyLengthLimit(e.target.value)}
+                          onChange={(e) => {
+                            setReplyLengthLimit(e.target.value);
+                            setHasUnsavedAiChanges(true);
+                          }}
                           maxLength={50}
                         />
                       </div>
                     </div>
+                  )}
+                </div>
+
+                {/* AI 行为设定保存生效按钮 */}
+                <div className="pt-3 border-t">
+                  <Button
+                    className="w-full"
+                    onClick={handleSaveAiConfig}
+                    disabled={upsertApiConfig.isPending}
+                    variant={hasUnsavedAiChanges ? "default" : "outline"}
+                  >
+                    {upsertApiConfig.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        保存中...
+                      </>
+                    ) : hasUnsavedAiChanges ? (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        保存生效
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 mr-2" />
+                        配置已生效
+                      </>
+                    )}
+                  </Button>
+                  {hasUnsavedAiChanges && (
+                    <p className="text-xs text-amber-500 mt-2 text-center">
+                      你有未保存的 AI 行为设定更改，请点击上方按钮保存生效
+                    </p>
                   )}
                 </div>
               </CardContent>

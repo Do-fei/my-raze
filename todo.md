@@ -166,3 +166,8 @@
 - [x] 语音设置卡片：ElevenLabs/Fish Audio 选择声音后添加独立"保存生效"按钮
 - [x] fal.ai 配置卡片：填写 Key 后添加独立"保存生效"按钮
 - [x] 未保存变更时按钮高亮 + 黄色提示，保存后变为"配置已生效"灰色状态（85 个测试全部通过）
+
+## v2.6 设置页增强
+- [x] AI 行为设定卡片添加独立"保存生效"按钮
+- [x] API Key 有效性即时验证（绿色/红色状态标识）：OpenRouter、ElevenLabs、Fish Audio、fal.ai
+- [x] OpenRouter 模型收藏/常用列表（localStorage 存储，收藏模型置顶显示）85 个测试全部通过）
