@@ -21,11 +21,24 @@ import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
 
-// TTS 语音播放 Hook - 支持浏览器内置和 API 两种模式
+// TTS 语音播放 Hook - 支持浏览器内置和 API 两种模式，支持播放速度控制
+const SPEED_OPTIONS = [
+  { value: 0.5, label: "0.5x" },
+  { value: 0.75, label: "0.75x" },
+  { value: 1, label: "1x" },
+  { value: 1.25, label: "1.25x" },
+  { value: 1.5, label: "1.5x" },
+  { value: 2, label: "2x" },
+];
+
 function useTTS() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [autoPlay, setAutoPlay] = useState(() => {
     return localStorage.getItem("tts-autoplay") === "true";
+  });
+  const [playbackSpeed, setPlaybackSpeed] = useState(() => {
+    const saved = localStorage.getItem("tts-speed");
+    return saved ? parseFloat(saved) : 1;
   });
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -36,6 +49,19 @@ function useTTS() {
 
   const ttsProvider = apiConfig?.ttsProvider || "browser";
 
+  // 更新播放速度
+  const updateSpeed = useCallback((speed: number) => {
+    setPlaybackSpeed(speed);
+    localStorage.setItem("tts-speed", String(speed));
+    // 如果当前正在播放，实时更新速度
+    if (audioRef.current) {
+      audioRef.current.playbackRate = speed;
+    }
+    if (utteranceRef.current && "speechSynthesis" in window) {
+      // 浏览器语音不支持实时更新 rate，下次播放生效
+    }
+  }, []);
+
   // 浏览器内置语音
   const speakBrowser = useCallback((text: string) => {
     if (!("speechSynthesis" in window)) {
@@ -45,7 +71,7 @@ function useTTS() {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "zh-CN";
-    utterance.rate = 0.95;
+    utterance.rate = playbackSpeed * 0.95; // 基础速度 0.95 * 用户选择的倍速
     utterance.pitch = 1.2;
     utterance.volume = 1;
     const voices = window.speechSynthesis.getVoices();
@@ -64,7 +90,7 @@ function useTTS() {
     utterance.onerror = () => setIsSpeaking(false);
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [playbackSpeed]);
 
   // API 语音（ElevenLabs / Fish Audio）
   const speakApi = useCallback(
@@ -79,6 +105,7 @@ function useTTS() {
               audioRef.current = null;
             }
             const audio = new Audio(data.audioUrl);
+            audio.playbackRate = playbackSpeed;
             audioRef.current = audio;
             audio.onended = () => setIsSpeaking(false);
             audio.onerror = () => {
@@ -96,7 +123,7 @@ function useTTS() {
         }
       );
     },
-    [ttsGenerate]
+    [ttsGenerate, playbackSpeed]
   );
 
   const speak = useCallback(
@@ -127,7 +154,7 @@ function useTTS() {
     });
   }, []);
 
-  return { speak, stop, isSpeaking, autoPlay, toggleAutoPlay, ttsProvider };
+  return { speak, stop, isSpeaking, autoPlay, toggleAutoPlay, ttsProvider, playbackSpeed, updateSpeed };
 }
 
 export default function Chat() {
@@ -136,7 +163,8 @@ export default function Chat() {
   const params = useParams();
   const conversationId = params.id ? parseInt(params.id) : null;
   const { theme, toggleTheme } = useTheme();
-  const { speak, stop, isSpeaking, autoPlay, toggleAutoPlay, ttsProvider } = useTTS();
+  const { speak, stop, isSpeaking, autoPlay, toggleAutoPlay, ttsProvider, playbackSpeed, updateSpeed } = useTTS();
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
   const [message, setMessage] = useState("");
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(
@@ -297,6 +325,38 @@ export default function Chat() {
         >
           {autoPlay ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
         </Button>
+
+        {/* 播放速度控制 */}
+        <div className="relative">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs font-mono px-2 h-8"
+            onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+            title="语音播放速度"
+          >
+            {playbackSpeed}x
+          </Button>
+          {showSpeedMenu && (
+            <div className="absolute right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-lg shadow-lg z-50 py-1 min-w-[80px]">
+              {SPEED_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors ${
+                    playbackSpeed === opt.value ? "text-primary font-semibold bg-primary/5" : ""
+                  }`}
+                  onClick={() => {
+                    updateSpeed(opt.value);
+                    setShowSpeedMenu(false);
+                    toast.success(`播放速度已设为 ${opt.label}`);
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <Button variant="ghost" size="icon" onClick={toggleTheme}>
           {theme === "light" ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}

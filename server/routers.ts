@@ -8,6 +8,7 @@ import {
   getActiveGirlfriend,
   getUserGirlfriends,
   updateGirlfriend,
+  deleteGirlfriend,
   createConversation,
   getUserConversations,
   getConversation,
@@ -20,7 +21,10 @@ import {
   deleteSelfie,
   upsertApiConfig,
   getUserApiConfig,
+  getConversationsWithLastMessage,
+  createDefaultGirlfriend,
 } from "./db";
+import { DEFAULT_GIRLFRIEND } from "../shared/defaultGirlfriend";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { invokeLLM } from "./_core/llm";
@@ -124,6 +128,29 @@ export const appRouter = router({
         await updateGirlfriend(id, ctx.user.id, data);
         return { success: true };
       }),
+
+    // 删除女友（级联删除相关消息和自拍）
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteGirlfriend(input.id, ctx.user.id);
+        return { success: true };
+      }),
+
+    // 确保默认女友存在（登录后调用）
+    ensureDefault: protectedProcedure.mutation(async ({ ctx }) => {
+      const girlfriend = await createDefaultGirlfriend(ctx.user.id, {
+        userId: ctx.user.id,
+        name: DEFAULT_GIRLFRIEND.name,
+        personality: DEFAULT_GIRLFRIEND.personality,
+        appearance: DEFAULT_GIRLFRIEND.appearance,
+        interests: DEFAULT_GIRLFRIEND.interests,
+        referenceImageUrl: DEFAULT_GIRLFRIEND.referenceImageUrl,
+        referenceImageKey: `default-raze-${ctx.user.id}`,
+        isActive: true,
+      });
+      return girlfriend;
+    }),
   }),
 
   // ============ Conversation Management ============
@@ -147,6 +174,11 @@ export const appRouter = router({
     // 获取对话列表
     list: protectedProcedure.query(async ({ ctx }) => {
       return await getUserConversations(ctx.user.id);
+    }),
+
+    // 获取对话列表（包含最后一条消息和女友信息）
+    listWithDetails: protectedProcedure.query(async ({ ctx }) => {
+      return await getConversationsWithLastMessage(ctx.user.id);
     }),
 
     // 获取单个对话

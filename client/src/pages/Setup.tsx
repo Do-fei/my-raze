@@ -4,10 +4,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { Loader2, Upload, ArrowLeft } from "lucide-react";
+import { Loader2, Upload, ArrowLeft, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function Setup() {
   const [, setLocation] = useLocation();
@@ -60,6 +71,22 @@ export default function Setup() {
       toast.error(`更新失败：${error.message}`);
     },
   });
+
+  const deleteGirlfriend = trpc.girlfriend.delete.useMutation({
+    onSuccess: () => {
+      toast.success("女友已删除");
+      setLocation("/");
+    },
+    onError: (error) => {
+      toast.error(`删除失败：${error.message}`);
+    },
+  });
+
+  const handleDelete = () => {
+    if (editId) {
+      deleteGirlfriend.mutate({ id: editId });
+    }
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -263,6 +290,54 @@ export default function Setup() {
                   "创建女友"
                 )}
               </Button>
+
+              {/* 删除按钮 - 仅编辑模式显示 */}
+              {isEditing && (
+                <div className="pt-4 border-t">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        className="w-full"
+                        disabled={deleteGirlfriend.isPending}
+                      >
+                        {deleteGirlfriend.isPending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            删除中...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            删除女友
+                          </>
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>确认删除</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          确定要删除 <strong>{name}</strong> 吗？此操作将同时删除所有相关的聊天记录和自拍照片，且无法撤销。
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleDelete}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          确认删除
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                  <p className="text-xs text-muted-foreground text-center mt-2">
+                    删除后将同时清除所有聊天记录和自拍照片
+                  </p>
+                </div>
+              )}
             </form>
           </CardContent>
         </Card>

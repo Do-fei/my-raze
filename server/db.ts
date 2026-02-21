@@ -358,3 +358,117 @@ export async function getUserApiConfig(userId: number): Promise<ApiConfig | unde
 
   return result[0];
 }
+
+// ============ Delete Girlfriend (Cascade) ============
+
+export async function deleteGirlfriend(id: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // 1. 获取该女友的所有对话 ID
+  const convos = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(eq(conversations.girlfriendId, id), eq(conversations.userId, userId)));
+
+  const convoIds = convos.map((c) => c.id);
+
+  // 2. 删除所有对话中的消息
+  if (convoIds.length > 0) {
+    for (const convoId of convoIds) {
+      await db.delete(messages).where(eq(messages.conversationId, convoId));
+    }
+  }
+
+  // 3. 删除所有对话
+  if (convoIds.length > 0) {
+    for (const convoId of convoIds) {
+      await db.delete(conversations).where(eq(conversations.id, convoId));
+    }
+  }
+
+  // 4. 删除所有自拍
+  await db.delete(selfies).where(and(eq(selfies.girlfriendId, id), eq(selfies.userId, userId)));
+
+  // 5. 删除女友
+  await db.delete(girlfriends).where(and(eq(girlfriends.id, id), eq(girlfriends.userId, userId)));
+}
+
+// ============ Conversations with Last Message ============
+
+export async function getConversationsWithLastMessage(userId: number): Promise<
+  (Conversation & { lastMessage?: string; lastMessageAt?: Date; girlfriendName?: string; girlfriendImage?: string })[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // 获取用户所有对话
+  const convos = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.userId, userId))
+    .orderBy(desc(conversations.updatedAt));
+
+  // 为每个对话获取最后一条消息和女友信息
+  const result = await Promise.all(
+    convos.map(async (convo) => {
+      // 获取最后一条消息
+      const lastMsgs = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.conversationId, convo.id))
+        .orderBy(desc(messages.createdAt))
+        .limit(1);
+
+      // 获取女友信息
+      const gfs = await db
+        .select({ name: girlfriends.name, referenceImageUrl: girlfriends.referenceImageUrl })
+        .from(girlfriends)
+        .where(eq(girlfriends.id, convo.girlfriendId))
+        .limit(1);
+
+      const lastMsg = lastMsgs[0];
+      const gf = gfs[0];
+
+      return {
+        ...convo,
+        lastMessage: lastMsg?.content || undefined,
+        lastMessageAt: lastMsg?.createdAt || undefined,
+        girlfriendName: gf?.name || undefined,
+        girlfriendImage: gf?.referenceImageUrl || undefined,
+      };
+    })
+  );
+
+  return result;
+}
+
+// ============ Create Default Girlfriend ============
+
+export async function createDefaultGirlfriend(userId: number, data: InsertGirlfriend): Promise<Girlfriend> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // 检查用户是否已有女友
+  const existing = await db
+    .select()
+    .from(girlfriends)
+    .where(eq(girlfriends.userId, userId))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return existing[0];
+  }
+
+  // 创建默认女友
+  const result = await db.insert(girlfriends).values(data);
+  const insertedId = Number(result[0].insertId);
+
+  const inserted = await db
+    .select()
+    .from(girlfriends)
+    .where(eq(girlfriends.id, insertedId))
+    .limit(1);
+
+  return inserted[0]!;
+}

@@ -14,34 +14,56 @@ import {
   Moon,
   Sparkles,
   Edit,
-  Trash2,
+  Clock,
+  Menu,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function Home() {
   const { user, loading, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const defaultCreatedRef = useRef(false);
 
   const { data: girlfriends, isLoading: girlfriendsLoading, refetch } = trpc.girlfriend.list.useQuery(
     undefined,
     { enabled: isAuthenticated }
   );
+
+  // 历史对话列表
+  const { data: conversationsWithDetails } = trpc.conversation.listWithDetails.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  // 确保默认女友存在
+  const ensureDefault = trpc.girlfriend.ensureDefault.useMutation({
+    onSuccess: () => {
+      refetch();
+    },
+  });
+
+  // 登录后自动创建默认女友
+  useEffect(() => {
+    if (isAuthenticated && girlfriends && girlfriends.length === 0 && !defaultCreatedRef.current) {
+      defaultCreatedRef.current = true;
+      ensureDefault.mutate();
+    }
+  }, [isAuthenticated, girlfriends]);
 
   const updateGirlfriend = trpc.girlfriend.update.useMutation({
     onSuccess: () => {
@@ -50,12 +72,7 @@ export default function Home() {
     },
   });
 
-  const handleActivate = (id: number) => {
-    updateGirlfriend.mutate({ id, isActive: true });
-  };
-
   const handleStartChat = (girlfriendId: number) => {
-    // 先激活这个女友，然后跳转聊天
     updateGirlfriend.mutate(
       { id: girlfriendId, isActive: true },
       {
@@ -64,6 +81,21 @@ export default function Home() {
         },
       }
     );
+  };
+
+  const formatTime = (date: Date | string) => {
+    const d = new Date(date);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "刚刚";
+    if (diffMins < 60) return `${diffMins}分钟前`;
+    if (diffHours < 24) return `${diffHours}小时前`;
+    if (diffDays < 7) return `${diffDays}天前`;
+    return d.toLocaleDateString();
   };
 
   if (loading) {
@@ -157,6 +189,14 @@ export default function Home() {
           <h1 className="text-lg font-bold">AI Girlfriend</h1>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setHistoryOpen(true)}
+            title="历史对话"
+          >
+            <Clock className="w-5 h-5" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={toggleTheme}>
             {theme === "light" ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
           </Button>
@@ -174,7 +214,7 @@ export default function Home() {
         </div>
 
         {/* 女友列表 */}
-        {girlfriendsLoading ? (
+        {girlfriendsLoading || ensureDefault.isPending ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
@@ -300,6 +340,73 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* 历史对话侧边栏 */}
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+        <SheetContent side="left" className="w-[320px] sm:max-w-[360px] p-0">
+          <SheetHeader className="p-4 border-b">
+            <SheetTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              历史对话
+            </SheetTitle>
+            <SheetDescription>
+              点击快速切换到对应聊天
+            </SheetDescription>
+          </SheetHeader>
+
+          <ScrollArea className="h-[calc(100vh-120px)]">
+            {!conversationsWithDetails || conversationsWithDetails.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                <MessageCircle className="w-12 h-12 text-muted-foreground mb-3" />
+                <p className="text-sm text-muted-foreground">还没有对话记录</p>
+                <p className="text-xs text-muted-foreground mt-1">选择一位女友开始聊天吧</p>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {conversationsWithDetails.map((convo) => (
+                  <button
+                    key={convo.id}
+                    className="w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors flex items-center gap-3"
+                    onClick={() => {
+                      setHistoryOpen(false);
+                      setLocation(`/chat/${convo.id}`);
+                    }}
+                  >
+                    <Avatar className="w-10 h-10 flex-shrink-0">
+                      {convo.girlfriendImage ? (
+                        <AvatarImage src={convo.girlfriendImage} alt={convo.girlfriendName || ""} />
+                      ) : null}
+                      <AvatarFallback className="text-sm">
+                        {convo.girlfriendName?.[0] || "?"}
+                      </AvatarFallback>
+                    </Avatar>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-sm truncate">
+                          {convo.girlfriendName || convo.title || "对话"}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                          {convo.lastMessageAt
+                            ? formatTime(convo.lastMessageAt)
+                            : formatTime(convo.updatedAt)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {convo.lastMessage
+                          ? convo.lastMessage === "[自拍照片]"
+                            ? "📷 发送了一张照片"
+                            : convo.lastMessage
+                          : "暂无消息"}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
