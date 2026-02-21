@@ -4,7 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Loader2, Save, Volume2, Sun, Moon, Search, Check, ExternalLink, Zap } from "lucide-react";
+import {
+  ArrowLeft, Loader2, Save, Volume2, Sun, Moon, Search, Check,
+  ExternalLink, Zap, Mic, Music, Globe,
+} from "lucide-react";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -18,33 +21,89 @@ type ModelInfo = {
   provider: string;
 };
 
+type ElevenLabsVoice = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  previewUrl: string;
+  labels: Record<string, string>;
+};
+
+type FishAudioModel = {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+};
+
+type TTSProvider = "browser" | "elevenlabs" | "fishaudio";
+
 export default function Settings() {
   const [, setLocation] = useLocation();
   const { theme, toggleTheme } = useTheme();
+
+  // API Key states
   const [falApiKey, setFalApiKey] = useState("");
   const [openRouterKey, setOpenRouterKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [modelSearch, setModelSearch] = useState("");
   const [showModelList, setShowModelList] = useState(false);
+
+  // TTS states
+  const [ttsProvider, setTtsProvider] = useState<TTSProvider>("browser");
   const [ttsAutoPlay, setTtsAutoPlay] = useState(() => {
     return localStorage.getItem("tts-autoplay") === "true";
   });
 
+  // ElevenLabs states
+  const [elevenlabsApiKey, setElevenlabsApiKey] = useState("");
+  const [elevenlabsVoiceId, setElevenlabsVoiceId] = useState("");
+  const [elevenlabsVoiceName, setElevenlabsVoiceName] = useState("");
+  const [showElevenLabsVoices, setShowElevenLabsVoices] = useState(false);
+  const [elevenLabsSearch, setElevenLabsSearch] = useState("");
+
+  // Fish Audio states
+  const [fishAudioApiKey, setFishAudioApiKey] = useState("");
+  const [fishAudioModelId, setFishAudioModelId] = useState("");
+  const [fishAudioModelName, setFishAudioModelName] = useState("");
+  const [showFishAudioModels, setShowFishAudioModels] = useState(false);
+  const [fishAudioSearch, setFishAudioSearch] = useState("");
+
   // 加载已有配置
   const { data: apiConfig, isLoading } = trpc.apiConfig.get.useQuery();
 
-  // 当用户输入 OpenRouter Key 后自动查询模型列表
+  // OpenRouter 模型列表
   const { data: modelsData, isLoading: modelsLoading, error: modelsError } = trpc.apiConfig.fetchModels.useQuery(
     { apiKey: openRouterKey },
     { enabled: openRouterKey.length > 10, retry: false }
   );
 
+  // ElevenLabs 声音列表
+  const { data: elevenLabsData, isLoading: elevenLabsLoading, error: elevenLabsError } = trpc.apiConfig.fetchElevenLabsVoices.useQuery(
+    { apiKey: elevenlabsApiKey },
+    { enabled: elevenlabsApiKey.length > 10, retry: false }
+  );
+
+  // Fish Audio 模型列表
+  const { data: fishAudioData, isLoading: fishAudioLoading, error: fishAudioError } = trpc.apiConfig.fetchFishAudioModels.useQuery(
+    { apiKey: fishAudioApiKey, search: fishAudioSearch || undefined },
+    { enabled: fishAudioApiKey.length > 10, retry: false }
+  );
+
   const upsertApiConfig = trpc.apiConfig.upsert.useMutation({
     onSuccess: () => {
-      toast.success("API 配置保存成功");
+      toast.success("配置保存成功");
     },
     onError: (error) => {
       toast.error(`保存失败：${error.message}`);
+    },
+  });
+
+  // TTS 测试
+  const ttsGenerate = trpc.tts.generate.useMutation({
+    onError: (error) => {
+      toast.error(`语音测试失败：${error.message}`);
     },
   });
 
@@ -53,10 +112,17 @@ export default function Settings() {
       setFalApiKey(apiConfig.falApiKey || "");
       setOpenRouterKey(apiConfig.llmApiKey || "");
       setSelectedModel(apiConfig.llmModel || "");
+      setTtsProvider((apiConfig.ttsProvider as TTSProvider) || "browser");
+      setElevenlabsApiKey(apiConfig.elevenlabsApiKey || "");
+      setElevenlabsVoiceId(apiConfig.elevenlabsVoiceId || "");
+      setElevenlabsVoiceName(apiConfig.elevenlabsVoiceName || "");
+      setFishAudioApiKey(apiConfig.fishAudioApiKey || "");
+      setFishAudioModelId(apiConfig.fishAudioModelId || "");
+      setFishAudioModelName(apiConfig.fishAudioModelName || "");
     }
   }, [apiConfig]);
 
-  // 过滤模型列表
+  // 过滤 OpenRouter 模型
   const filteredModels = useMemo(() => {
     if (!modelsData?.models) return [];
     const search = modelSearch.toLowerCase().trim();
@@ -69,23 +135,62 @@ export default function Settings() {
     );
   }, [modelsData?.models, modelSearch]);
 
-  // 按 provider 分组
   const groupedModels = useMemo(() => {
     const groups: Record<string, ModelInfo[]> = {};
     for (const model of filteredModels) {
-      const provider = model.provider;
-      if (!groups[provider]) groups[provider] = [];
-      groups[provider].push(model);
+      if (!groups[model.provider]) groups[model.provider] = [];
+      groups[model.provider].push(model);
     }
-    // 按 provider 名称排序
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [filteredModels]);
+
+  // 过滤 ElevenLabs 声音
+  const filteredElevenLabsVoices = useMemo(() => {
+    if (!elevenLabsData?.voices) return [];
+    const search = elevenLabsSearch.toLowerCase().trim();
+    if (!search) return elevenLabsData.voices;
+    return elevenLabsData.voices.filter(
+      (v: ElevenLabsVoice) =>
+        v.name.toLowerCase().includes(search) ||
+        v.category.toLowerCase().includes(search) ||
+        v.description.toLowerCase().includes(search)
+    );
+  }, [elevenLabsData?.voices, elevenLabsSearch]);
+
+  // 按 category 分组 ElevenLabs 声音
+  const groupedElevenLabsVoices = useMemo(() => {
+    const groups: Record<string, ElevenLabsVoice[]> = {};
+    for (const voice of filteredElevenLabsVoices) {
+      const cat = voice.category || "other";
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(voice);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [filteredElevenLabsVoices]);
+
+  // 过滤 Fish Audio 模型
+  const filteredFishAudioModels = useMemo(() => {
+    if (!fishAudioData?.models) return [];
+    return fishAudioData.models;
+  }, [fishAudioData?.models]);
+
+  const selectedModelInfo = useMemo(() => {
+    if (!modelsData?.models || !selectedModel) return null;
+    return modelsData.models.find((m: ModelInfo) => m.id === selectedModel);
+  }, [modelsData?.models, selectedModel]);
 
   const handleSave = () => {
     upsertApiConfig.mutate({
       falApiKey: falApiKey || undefined,
       llmApiKey: openRouterKey || undefined,
       llmModel: selectedModel || undefined,
+      ttsProvider,
+      elevenlabsApiKey: elevenlabsApiKey || undefined,
+      elevenlabsVoiceId: elevenlabsVoiceId || undefined,
+      elevenlabsVoiceName: elevenlabsVoiceName || undefined,
+      fishAudioApiKey: fishAudioApiKey || undefined,
+      fishAudioModelId: fishAudioModelId || undefined,
+      fishAudioModelName: fishAudioModelName || undefined,
     });
   };
 
@@ -95,7 +200,7 @@ export default function Settings() {
     toast.success(checked ? "已开启自动语音" : "已关闭自动语音");
   }, []);
 
-  const handleTestVoice = useCallback(() => {
+  const handleTestBrowserVoice = useCallback(() => {
     if (!("speechSynthesis" in window)) {
       toast.error("当前浏览器不支持语音功能");
       return;
@@ -117,10 +222,39 @@ export default function Settings() {
     window.speechSynthesis.speak(utterance);
   }, []);
 
+  const handleTestApiVoice = useCallback(async () => {
+    // 先保存当前配置
+    toast.info("正在生成语音测试...");
+    ttsGenerate.mutate(
+      { text: "你好呀，我是你的虚拟女友，很高兴认识你~" },
+      {
+        onSuccess: (data) => {
+          const audio = new Audio(data.audioUrl);
+          audio.play();
+          toast.success("语音播放中");
+        },
+      }
+    );
+  }, [ttsGenerate]);
+
   const handleSelectModel = (modelId: string) => {
     setSelectedModel(modelId);
     setShowModelList(false);
     toast.success(`已选择模型：${modelId}`);
+  };
+
+  const handleSelectElevenLabsVoice = (voice: ElevenLabsVoice) => {
+    setElevenlabsVoiceId(voice.id);
+    setElevenlabsVoiceName(voice.name);
+    setShowElevenLabsVoices(false);
+    toast.success(`已选择声音：${voice.name}`);
+  };
+
+  const handleSelectFishAudioModel = (model: FishAudioModel) => {
+    setFishAudioModelId(model.id);
+    setFishAudioModelName(model.name);
+    setShowFishAudioModels(false);
+    toast.success(`已选择声音：${model.name}`);
   };
 
   const formatPrice = (price: string) => {
@@ -130,10 +264,26 @@ export default function Settings() {
     return `$${num.toFixed(6)}`;
   };
 
-  const selectedModelInfo = useMemo(() => {
-    if (!modelsData?.models || !selectedModel) return null;
-    return modelsData.models.find((m: ModelInfo) => m.id === selectedModel);
-  }, [modelsData?.models, selectedModel]);
+  const ttsProviderOptions: { value: TTSProvider; label: string; icon: React.ReactNode; desc: string }[] = [
+    {
+      value: "browser",
+      label: "浏览器内置语音",
+      icon: <Globe className="w-5 h-5" />,
+      desc: "免费，使用浏览器 Web Speech API",
+    },
+    {
+      value: "elevenlabs",
+      label: "ElevenLabs",
+      icon: <Mic className="w-5 h-5" />,
+      desc: "高品质 AI 语音，支持声音克隆",
+    },
+    {
+      value: "fishaudio",
+      label: "Fish Audio",
+      icon: <Music className="w-5 h-5" />,
+      desc: "中文语音优化，丰富的声音模型",
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-background">
@@ -156,7 +306,7 @@ export default function Settings() {
           </div>
         ) : (
           <>
-            {/* 语音设置 */}
+            {/* ========== 语音设置 ========== */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -164,10 +314,11 @@ export default function Settings() {
                   语音设置
                 </CardTitle>
                 <CardDescription>
-                  使用浏览器内置语音合成，让 AI 女友可以"说话"（免费，无需 API Key）
+                  选择语音引擎，让 AI 女友用你喜欢的声音说话
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-5">
+                {/* 自动播放开关 */}
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label>自动语音播放</Label>
@@ -177,14 +328,372 @@ export default function Settings() {
                   </div>
                   <Switch checked={ttsAutoPlay} onCheckedChange={handleTtsToggle} />
                 </div>
-                <Button variant="outline" size="sm" onClick={handleTestVoice}>
-                  <Volume2 className="w-4 h-4 mr-2" />
-                  测试语音效果
-                </Button>
+
+                {/* 语音引擎选择 */}
+                <div className="space-y-3">
+                  <Label>语音引擎</Label>
+                  <div className="grid gap-3">
+                    {ttsProviderOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => setTtsProvider(option.value)}
+                        className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
+                          ttsProvider === option.value
+                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                            : "border-border hover:border-primary/30 hover:bg-accent/30"
+                        }`}
+                      >
+                        <div className={`p-2 rounded-lg ${
+                          ttsProvider === option.value ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {option.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{option.label}</span>
+                            {option.value === "browser" && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 font-medium">
+                                免费
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{option.desc}</p>
+                        </div>
+                        {ttsProvider === option.value && (
+                          <Check className="w-4 h-4 text-primary shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ===== 浏览器内置语音配置 ===== */}
+                {ttsProvider === "browser" && (
+                  <div className="space-y-3 pt-2 border-t">
+                    <Button variant="outline" size="sm" onClick={handleTestBrowserVoice}>
+                      <Volume2 className="w-4 h-4 mr-2" />
+                      测试浏览器语音
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      浏览器内置语音免费使用，语音质量取决于你的操作系统和浏览器。
+                    </p>
+                  </div>
+                )}
+
+                {/* ===== ElevenLabs 配置 ===== */}
+                {ttsProvider === "elevenlabs" && (
+                  <div className="space-y-4 pt-2 border-t">
+                    <div className="space-y-2">
+                      <Label htmlFor="elevenlabsKey">ElevenLabs API Key</Label>
+                      <Input
+                        id="elevenlabsKey"
+                        type="password"
+                        placeholder="输入你的 ElevenLabs API Key"
+                        value={elevenlabsApiKey}
+                        onChange={(e) => setElevenlabsApiKey(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        获取 API Key：
+                        <a
+                          href="https://elevenlabs.io/app/settings/api-keys"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline ml-1 inline-flex items-center gap-1"
+                        >
+                          elevenlabs.io <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </p>
+                    </div>
+
+                    {/* 加载状态 */}
+                    {elevenlabsApiKey.length > 10 && elevenLabsLoading && (
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm text-muted-foreground">正在加载声音列表...</span>
+                      </div>
+                    )}
+
+                    {/* 错误提示 */}
+                    {elevenLabsError && (
+                      <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                        {elevenLabsError.message}
+                      </div>
+                    )}
+
+                    {/* 已选择的声音 */}
+                    {elevenlabsVoiceId && (
+                      <div className="p-3 rounded-lg border bg-primary/5 border-primary/20">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <Check className="w-4 h-4 text-primary" />
+                              <span className="font-medium text-sm">当前声音</span>
+                            </div>
+                            <p className="text-sm mt-1">{elevenlabsVoiceName || elevenlabsVoiceId}</p>
+                          </div>
+                          {elevenLabsData && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowElevenLabsVoices(!showElevenLabsVoices)}
+                            >
+                              更换声音
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 声音列表 */}
+                    {elevenLabsData && !elevenLabsLoading && (showElevenLabsVoices || !elevenlabsVoiceId) && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label>选择声音（共 {elevenLabsData.total} 个可用）</Label>
+                          {elevenlabsVoiceId && (
+                            <Button variant="ghost" size="sm" onClick={() => setShowElevenLabsVoices(false)}>
+                              收起
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            placeholder="搜索声音名称..."
+                            value={elevenLabsSearch}
+                            onChange={(e) => setElevenLabsSearch(e.target.value)}
+                            className="pl-9"
+                          />
+                        </div>
+
+                        <div className="max-h-72 overflow-y-auto rounded-lg border divide-y">
+                          {groupedElevenLabsVoices.length === 0 ? (
+                            <div className="p-4 text-center text-sm text-muted-foreground">
+                              没有找到匹配的声音
+                            </div>
+                          ) : (
+                            groupedElevenLabsVoices.map(([category, voices]) => (
+                              <div key={category}>
+                                <div className="px-3 py-2 bg-muted/30 text-xs font-semibold text-muted-foreground uppercase sticky top-0">
+                                  {category} ({voices.length})
+                                </div>
+                                {voices.map((voice: ElevenLabsVoice) => (
+                                  <button
+                                    key={voice.id}
+                                    className={`w-full text-left px-3 py-2.5 hover:bg-accent/50 transition-colors flex items-center justify-between gap-2 ${
+                                      elevenlabsVoiceId === voice.id ? "bg-primary/10 border-l-2 border-primary" : ""
+                                    }`}
+                                    onClick={() => handleSelectElevenLabsVoice(voice)}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium">{voice.name}</span>
+                                        {elevenlabsVoiceId === voice.id && (
+                                          <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+                                        )}
+                                      </div>
+                                      {voice.description && (
+                                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                          {voice.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    {voice.previewUrl && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="shrink-0 h-7 w-7 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const audio = new Audio(voice.previewUrl);
+                                          audio.play();
+                                        }}
+                                        title="试听"
+                                      >
+                                        <Volume2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 测试按钮 */}
+                    {elevenlabsVoiceId && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleTestApiVoice}
+                        disabled={ttsGenerate.isPending}
+                      >
+                        {ttsGenerate.isPending ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Volume2 className="w-4 h-4 mr-2" />
+                        )}
+                        测试 ElevenLabs 语音
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* ===== Fish Audio 配置 ===== */}
+                {ttsProvider === "fishaudio" && (
+                  <div className="space-y-4 pt-2 border-t">
+                    <div className="space-y-2">
+                      <Label htmlFor="fishAudioKey">Fish Audio API Key</Label>
+                      <Input
+                        id="fishAudioKey"
+                        type="password"
+                        placeholder="输入你的 Fish Audio API Key"
+                        value={fishAudioApiKey}
+                        onChange={(e) => setFishAudioApiKey(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        获取 API Key：
+                        <a
+                          href="https://fish.audio/zh-CN/go-api/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline ml-1 inline-flex items-center gap-1"
+                        >
+                          fish.audio <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </p>
+                    </div>
+
+                    {/* 加载状态 */}
+                    {fishAudioApiKey.length > 10 && fishAudioLoading && (
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm text-muted-foreground">正在加载声音模型列表...</span>
+                      </div>
+                    )}
+
+                    {/* 错误提示 */}
+                    {fishAudioError && (
+                      <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                        {fishAudioError.message}
+                      </div>
+                    )}
+
+                    {/* 已选择的声音模型 */}
+                    {fishAudioModelId && (
+                      <div className="p-3 rounded-lg border bg-primary/5 border-primary/20">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <Check className="w-4 h-4 text-primary" />
+                              <span className="font-medium text-sm">当前声音模型</span>
+                            </div>
+                            <p className="text-sm mt-1">{fishAudioModelName || fishAudioModelId}</p>
+                          </div>
+                          {fishAudioData && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowFishAudioModels(!showFishAudioModels)}
+                            >
+                              更换模型
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 声音模型列表 */}
+                    {fishAudioData && !fishAudioLoading && (showFishAudioModels || !fishAudioModelId) && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label>选择声音模型（共 {fishAudioData.total} 个可用）</Label>
+                          {fishAudioModelId && (
+                            <Button variant="ghost" size="sm" onClick={() => setShowFishAudioModels(false)}>
+                              收起
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            placeholder="搜索声音模型名称..."
+                            value={fishAudioSearch}
+                            onChange={(e) => setFishAudioSearch(e.target.value)}
+                            className="pl-9"
+                          />
+                        </div>
+
+                        <div className="max-h-72 overflow-y-auto rounded-lg border divide-y">
+                          {filteredFishAudioModels.length === 0 ? (
+                            <div className="p-4 text-center text-sm text-muted-foreground">
+                              没有找到匹配的声音模型
+                            </div>
+                          ) : (
+                            filteredFishAudioModels.map((model: FishAudioModel) => (
+                              <button
+                                key={model.id}
+                                className={`w-full text-left px-3 py-2.5 hover:bg-accent/50 transition-colors ${
+                                  fishAudioModelId === model.id ? "bg-primary/10 border-l-2 border-primary" : ""
+                                }`}
+                                onClick={() => handleSelectFishAudioModel(model)}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium">{model.name}</span>
+                                      {fishAudioModelId === model.id && (
+                                        <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+                                      )}
+                                    </div>
+                                    {model.description && (
+                                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                        {model.description}
+                                      </p>
+                                    )}
+                                    {model.tags.length > 0 && (
+                                      <div className="flex gap-1 mt-1 flex-wrap">
+                                        {model.tags.slice(0, 3).map((tag) => (
+                                          <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                                            {tag}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 测试按钮 */}
+                    {fishAudioModelId && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleTestApiVoice}
+                        disabled={ttsGenerate.isPending}
+                      >
+                        {ttsGenerate.isPending ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Volume2 className="w-4 h-4 mr-2" />
+                        )}
+                        测试 Fish Audio 语音
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* 主题设置 */}
+            {/* ========== 主题设置 ========== */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -213,7 +722,7 @@ export default function Settings() {
               </CardContent>
             </Card>
 
-            {/* fal.ai API 配置 */}
+            {/* ========== fal.ai API 配置 ========== */}
             <Card>
               <CardHeader>
                 <CardTitle>fal.ai API 配置</CardTitle>
@@ -244,7 +753,7 @@ export default function Settings() {
               </CardContent>
             </Card>
 
-            {/* OpenRouter LLM 配置 */}
+            {/* ========== OpenRouter LLM 配置 ========== */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -252,7 +761,7 @@ export default function Settings() {
                   OpenRouter LLM 配置
                 </CardTitle>
                 <CardDescription>
-                  通过 OpenRouter 接入数百种 AI 模型（GPT-4o、Claude、Gemini、Grok 等）。获取 API Key：
+                  通过 OpenRouter 接入数百种 AI 模型。获取 API Key：
                   <a
                     href="https://openrouter.ai/keys"
                     target="_blank"
@@ -264,7 +773,6 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
-                {/* API Key 输入 */}
                 <div className="space-y-2">
                   <Label htmlFor="openRouterKey">OpenRouter API Key</Label>
                   <Input
@@ -279,22 +787,19 @@ export default function Settings() {
                   </p>
                 </div>
 
-                {/* 模型加载状态 */}
                 {openRouterKey.length > 10 && modelsLoading && (
                   <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     <span className="text-sm text-muted-foreground">正在加载可用模型列表...</span>
                   </div>
                 )}
 
-                {/* API Key 错误 */}
                 {modelsError && (
                   <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
                     {modelsError.message}
                   </div>
                 )}
 
-                {/* 已选择的模型 */}
                 {selectedModel && (
                   <div className="p-3 rounded-lg border bg-primary/5 border-primary/20">
                     <div className="flex items-center justify-between">
@@ -306,8 +811,8 @@ export default function Settings() {
                         <p className="text-sm mt-1 font-mono">{selectedModel}</p>
                         {selectedModelInfo && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            上下文：{(selectedModelInfo.contextLength / 1000).toFixed(0)}K tokens | 
-                            输入：{formatPrice(selectedModelInfo.pricing.prompt)}/token | 
+                            上下文：{(selectedModelInfo.contextLength / 1000).toFixed(0)}K tokens |
+                            输入：{formatPrice(selectedModelInfo.pricing.prompt)}/token |
                             输出：{formatPrice(selectedModelInfo.pricing.completion)}/token
                           </p>
                         )}
@@ -325,7 +830,6 @@ export default function Settings() {
                   </div>
                 )}
 
-                {/* 模型列表 */}
                 {modelsData && !modelsLoading && (showModelList || !selectedModel) && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -337,7 +841,6 @@ export default function Settings() {
                       )}
                     </div>
 
-                    {/* 搜索框 */}
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
@@ -348,7 +851,6 @@ export default function Settings() {
                       />
                     </div>
 
-                    {/* 模型列表（按 provider 分组） */}
                     <div className="max-h-80 overflow-y-auto rounded-lg border divide-y">
                       {groupedModels.length === 0 ? (
                         <div className="p-4 text-center text-sm text-muted-foreground">
@@ -398,7 +900,7 @@ export default function Settings() {
               </CardContent>
             </Card>
 
-            {/* 保存按钮 */}
+            {/* ========== 保存按钮 ========== */}
             <Button className="w-full" onClick={handleSave} disabled={upsertApiConfig.isPending}>
               {upsertApiConfig.isPending ? (
                 <>
@@ -408,42 +910,41 @@ export default function Settings() {
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
-                  保存 API 配置
+                  保存所有配置
                 </>
               )}
             </Button>
 
-            {/* 使用说明 */}
+            {/* ========== 使用说明 ========== */}
             <Card className="bg-muted/50">
               <CardHeader>
                 <CardTitle className="text-base">使用说明</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground space-y-2">
                 <p>
-                  <strong>1. 语音功能：</strong>免费，使用浏览器内置语音合成，无需额外配置
+                  <strong>1. 语音功能：</strong>三种引擎可选 — 浏览器内置（免费）、ElevenLabs（高品质）、Fish Audio（中文优化）
                 </p>
                 <p>
-                  <strong>2. fal.ai API Key：</strong>必填（用于生成自拍照片）
+                  <strong>2. fal.ai API Key：</strong>必填（用于生成自拍照片），成本约 $0.022/张
                 </p>
                 <p>
-                  <strong>3. OpenRouter API Key：</strong>可选，如果不填写将使用内置 API
+                  <strong>3. OpenRouter API Key：</strong>可选，如果不填写将使用内置免费 API
                 </p>
                 <p>
-                  <strong>4. 模型选择建议：</strong>
+                  <strong>4. 语音引擎对比：</strong>
                 </p>
                 <ul className="list-disc list-inside pl-4 space-y-1">
-                  <li>性价比之选：openai/gpt-4o-mini（便宜且快速）</li>
-                  <li>角色扮演推荐：anthropic/claude-3.5-sonnet（更自然的对话）</li>
-                  <li>免费模型：google/gemini-2.0-flash-exp:free</li>
-                  <li>中文优化：deepseek/deepseek-chat</li>
+                  <li>浏览器内置：免费，质量一般，依赖系统</li>
+                  <li>ElevenLabs：$5/月起，英文极佳，支持声音克隆</li>
+                  <li>Fish Audio：按量付费，中文优化，丰富的声音库</li>
                 </ul>
                 <p>
-                  <strong>5. 成本估算：</strong>
+                  <strong>5. 模型选择建议：</strong>
                 </p>
                 <ul className="list-disc list-inside pl-4 space-y-1">
-                  <li>语音：免费</li>
-                  <li>图片生成：约 $0.022/张</li>
-                  <li>对话（取决于模型）：$0.01-0.50/天</li>
+                  <li>性价比之选：openai/gpt-4o-mini</li>
+                  <li>角色扮演推荐：anthropic/claude-3.5-sonnet</li>
+                  <li>中文优化：deepseek/deepseek-chat</li>
                 </ul>
               </CardContent>
             </Card>

@@ -76,3 +76,16 @@
 - [x] 在聊天输入框旁添加“拍照”按钮（Camera 图标）
 - [x] 点击后触发自拍生成流程（支持输入框场景描述或默认随意自拍）
 - [x] 添加生成中的加载状态提示（旋转动画 + toast）
+
+## 语音双选方案（v1.4）
+- [x] 研究 ElevenLabs API（声音列表、TTS 生成）
+- [x] 研究 Fish Audio API（声音列表、TTS 生成）
+- [x] 数据库：apiConfigs 表添加语音配置字段（ttsProvider, elevenlabsApiKey, elevenlabsVoiceId, fishAudioApiKey, fishAudioModelId 等）
+- [x] 后端：新增 ElevenLabs 声音列表查询 API
+- [x] 后端：新增 Fish Audio 声音列表查询 API
+- [x] 后端：新增 TTS 生成 API（根据 provider 选择 ElevenLabs 或 Fish Audio）
+- [x] 前端：设置页面语音区域改为三种模式选择（免费/ElevenLabs/Fish Audio）
+- [x] 前端：ElevenLabs 填 Key 后自动加载声音列表（含分类和试听）
+- [x] 前端：Fish Audio 填 Key 后自动加载声音列表（含搜索和标签）
+- [x] 前端：聊天页面语音播放逻辑适配三种模式（浏览器内置/ElevenLabs/Fish Audio）
+- [x] 测试：编写语音功能相关单元测试（39 个测试全部通过）

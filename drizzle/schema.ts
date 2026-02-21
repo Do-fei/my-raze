@@ -104,6 +104,14 @@ export const apiConfigs = mysqlTable("apiConfigs", {
   llmApiKey: varchar("llmApiKey", { length: 200 }), // OpenRouter API Key
   llmApiUrl: varchar("llmApiUrl", { length: 500 }), // LLM API URL (固定为 OpenRouter)
   llmModel: varchar("llmModel", { length: 200 }), // 用户选择的模型 ID（如 openai/gpt-4o）
+  // TTS 语音配置
+  ttsProvider: mysqlEnum("ttsProvider", ["browser", "elevenlabs", "fishaudio"]).default("browser").notNull(), // 语音提供商
+  elevenlabsApiKey: varchar("elevenlabsApiKey", { length: 200 }), // ElevenLabs API Key
+  elevenlabsVoiceId: varchar("elevenlabsVoiceId", { length: 200 }), // ElevenLabs 选择的声音 ID
+  elevenlabsVoiceName: varchar("elevenlabsVoiceName", { length: 200 }), // ElevenLabs 声音名称
+  fishAudioApiKey: varchar("fishAudioApiKey", { length: 200 }), // Fish Audio API Key
+  fishAudioModelId: varchar("fishAudioModelId", { length: 200 }), // Fish Audio 选择的声音模型 ID
+  fishAudioModelName: varchar("fishAudioModelName", { length: 200 }), // Fish Audio 声音模型名称
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

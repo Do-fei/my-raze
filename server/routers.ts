@@ -392,6 +392,13 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           falApiKey: z.string().optional(),
           llmApiKey: z.string().optional(),
           llmModel: z.string().optional(),
+          ttsProvider: z.enum(["browser", "elevenlabs", "fishaudio"]).optional(),
+          elevenlabsApiKey: z.string().optional(),
+          elevenlabsVoiceId: z.string().optional(),
+          elevenlabsVoiceName: z.string().optional(),
+          fishAudioApiKey: z.string().optional(),
+          fishAudioModelId: z.string().optional(),
+          fishAudioModelName: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -401,7 +408,76 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           llmApiKey: input.llmApiKey,
           llmApiUrl: input.llmApiKey ? "https://openrouter.ai/api/v1/chat/completions" : undefined,
           llmModel: input.llmModel,
+          ttsProvider: input.ttsProvider,
+          elevenlabsApiKey: input.elevenlabsApiKey,
+          elevenlabsVoiceId: input.elevenlabsVoiceId,
+          elevenlabsVoiceName: input.elevenlabsVoiceName,
+          fishAudioApiKey: input.fishAudioApiKey,
+          fishAudioModelId: input.fishAudioModelId,
+          fishAudioModelName: input.fishAudioModelName,
         });
+      }),
+
+    // 查询 ElevenLabs 声音列表
+    fetchElevenLabsVoices: protectedProcedure
+      .input(z.object({ apiKey: z.string().min(1) }))
+      .query(async ({ input }) => {
+        try {
+          const response = await axios.get("https://api.elevenlabs.io/v1/voices", {
+            headers: {
+              "xi-api-key": input.apiKey,
+            },
+          });
+
+          const voices = response.data.voices.map((v: any) => ({
+            id: v.voice_id,
+            name: v.name,
+            category: v.category || "premade",
+            description: v.description || "",
+            previewUrl: v.preview_url || "",
+            labels: v.labels || {},
+          }));
+
+          return { voices, total: voices.length };
+        } catch (error: any) {
+          console.error("[ElevenLabs] Failed to fetch voices:", error?.response?.status);
+          if (error?.response?.status === 401) {
+            throw new Error("ElevenLabs API Key 无效，请检查后重试");
+          }
+          throw new Error("获取声音列表失败，请稍后重试");
+        }
+      }),
+
+    // 查询 Fish Audio 声音模型列表
+    fetchFishAudioModels: protectedProcedure
+      .input(z.object({ apiKey: z.string().min(1), search: z.string().optional() }))
+      .query(async ({ input }) => {
+        try {
+          const params: any = { page_size: 100, page_number: 1 };
+          if (input.search) params.title = input.search;
+
+          const response = await axios.get("https://api.fish.audio/model", {
+            headers: {
+              Authorization: `Bearer ${input.apiKey}`,
+            },
+            params,
+          });
+
+          const models = response.data.items.map((m: any) => ({
+            id: m._id,
+            name: m.title || m._id,
+            description: m.description || "",
+            tags: m.tags || [],
+          }));
+
+          return { models, total: response.data.total || models.length };
+        } catch (error: any) {
+          console.error("[FishAudio] Failed to fetch models:", error?.response?.status);
+          if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error("Fish Audio API Key 无效，请检查后重试");
+          }
+          throw new Error("获取声音模型列表失败，请稍后重试");
+        }
       }),
 
     // 查询 OpenRouter 可用模型列表
@@ -443,6 +519,95 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
             throw new Error("API Key 无效，请检查后重试");
           }
           throw new Error("获取模型列表失败，请稍后重试");
+        }
+      }),
+  }),
+
+  // ============ TTS 语音生成 ============
+  tts: router({
+    // 生成语音
+    generate: protectedProcedure
+      .input(
+        z.object({
+          text: z.string().min(1).max(5000),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const apiConfig = await getUserApiConfig(ctx.user.id);
+        if (!apiConfig) {
+          throw new Error("未配置 API");
+        }
+
+        const provider = apiConfig.ttsProvider || "browser";
+
+        if (provider === "elevenlabs") {
+          if (!apiConfig.elevenlabsApiKey || !apiConfig.elevenlabsVoiceId) {
+            throw new Error("请先配置 ElevenLabs API Key 并选择声音");
+          }
+
+          try {
+            const response = await axios.post(
+              `https://api.elevenlabs.io/v1/text-to-speech/${apiConfig.elevenlabsVoiceId}`,
+              {
+                text: input.text,
+                model_id: "eleven_multilingual_v2",
+              },
+              {
+                headers: {
+                  "xi-api-key": apiConfig.elevenlabsApiKey,
+                  "Content-Type": "application/json",
+                  Accept: "audio/mpeg",
+                },
+                responseType: "arraybuffer",
+              }
+            );
+
+            // 上传音频到 S3
+            const audioBuffer = Buffer.from(response.data);
+            const fileKey = `tts-${ctx.user.id}-${nanoid()}.mp3`;
+            const { url } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
+
+            return { audioUrl: url, provider: "elevenlabs" as const };
+          } catch (error: any) {
+            console.error("[TTS] ElevenLabs error:", error?.response?.status);
+            throw new Error("ElevenLabs 语音生成失败");
+          }
+        } else if (provider === "fishaudio") {
+          if (!apiConfig.fishAudioApiKey || !apiConfig.fishAudioModelId) {
+            throw new Error("请先配置 Fish Audio API Key 并选择声音模型");
+          }
+
+          try {
+            const response = await axios.post(
+              "https://api.fish.audio/v1/tts",
+              {
+                text: input.text,
+                reference_id: apiConfig.fishAudioModelId,
+                format: "mp3",
+              },
+              {
+                headers: {
+                  Authorization: `Bearer ${apiConfig.fishAudioApiKey}`,
+                  "Content-Type": "application/json",
+                  model: "s1",
+                },
+                responseType: "arraybuffer",
+              }
+            );
+
+            // 上传音频到 S3
+            const audioBuffer = Buffer.from(response.data);
+            const fileKey = `tts-${ctx.user.id}-${nanoid()}.mp3`;
+            const { url } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
+
+            return { audioUrl: url, provider: "fishaudio" as const };
+          } catch (error: any) {
+            console.error("[TTS] Fish Audio error:", error?.response?.status);
+            throw new Error("Fish Audio 语音生成失败");
+          }
+        } else {
+          // browser 模式，前端处理
+          throw new Error("浏览器语音模式无需后端处理");
         }
       }),
   }),

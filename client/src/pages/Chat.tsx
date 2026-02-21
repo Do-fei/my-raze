@@ -21,30 +21,33 @@ import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
 
-// TTS 语音播放 Hook
+// TTS 语音播放 Hook - 支持浏览器内置和 API 两种模式
 function useTTS() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [autoPlay, setAutoPlay] = useState(() => {
     return localStorage.getItem("tts-autoplay") === "true";
   });
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const speak = useCallback((text: string) => {
+  // 获取用户的 TTS 配置
+  const { data: apiConfig } = trpc.apiConfig.get.useQuery();
+  const ttsGenerate = trpc.tts.generate.useMutation();
+
+  const ttsProvider = apiConfig?.ttsProvider || "browser";
+
+  // 浏览器内置语音
+  const speakBrowser = useCallback((text: string) => {
     if (!("speechSynthesis" in window)) {
       toast.error("当前浏览器不支持语音功能");
       return;
     }
-
-    // 停止当前播放
     window.speechSynthesis.cancel();
-
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "zh-CN";
     utterance.rate = 0.95;
-    utterance.pitch = 1.2; // 稍微高一点的音调，更甜美
+    utterance.pitch = 1.2;
     utterance.volume = 1;
-
-    // 尝试选择女性声音
     const voices = window.speechSynthesis.getVoices();
     const zhFemaleVoice = voices.find(
       (v) =>
@@ -55,20 +58,64 @@ function useTTS() {
           v.name.includes("女"))
     );
     const zhVoice = zhFemaleVoice || voices.find((v) => v.lang.startsWith("zh"));
-    if (zhVoice) {
-      utterance.voice = zhVoice;
-    }
-
+    if (zhVoice) utterance.voice = zhVoice;
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
-
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
   }, []);
 
+  // API 语音（ElevenLabs / Fish Audio）
+  const speakApi = useCallback(
+    (text: string) => {
+      setIsSpeaking(true);
+      ttsGenerate.mutate(
+        { text },
+        {
+          onSuccess: (data) => {
+            if (audioRef.current) {
+              audioRef.current.pause();
+              audioRef.current = null;
+            }
+            const audio = new Audio(data.audioUrl);
+            audioRef.current = audio;
+            audio.onended = () => setIsSpeaking(false);
+            audio.onerror = () => {
+              setIsSpeaking(false);
+              toast.error("语音播放失败");
+            };
+            audio.play().catch(() => {
+              setIsSpeaking(false);
+            });
+          },
+          onError: (error) => {
+            setIsSpeaking(false);
+            toast.error(`语音生成失败：${error.message}`);
+          },
+        }
+      );
+    },
+    [ttsGenerate]
+  );
+
+  const speak = useCallback(
+    (text: string) => {
+      if (ttsProvider === "browser") {
+        speakBrowser(text);
+      } else {
+        speakApi(text);
+      }
+    },
+    [ttsProvider, speakBrowser, speakApi]
+  );
+
   const stop = useCallback(() => {
     window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
     setIsSpeaking(false);
   }, []);
 
@@ -80,7 +127,7 @@ function useTTS() {
     });
   }, []);
 
-  return { speak, stop, isSpeaking, autoPlay, toggleAutoPlay };
+  return { speak, stop, isSpeaking, autoPlay, toggleAutoPlay, ttsProvider };
 }
 
 export default function Chat() {
@@ -89,7 +136,7 @@ export default function Chat() {
   const params = useParams();
   const conversationId = params.id ? parseInt(params.id) : null;
   const { theme, toggleTheme } = useTheme();
-  const { speak, stop, isSpeaking, autoPlay, toggleAutoPlay } = useTTS();
+  const { speak, stop, isSpeaking, autoPlay, toggleAutoPlay, ttsProvider } = useTTS();
 
   const [message, setMessage] = useState("");
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(
@@ -152,7 +199,6 @@ export default function Chat() {
   });
 
   useEffect(() => {
-    // 如果没有对话 ID，创建新对话
     if (!currentConversationId && girlfriend) {
       createConversation.mutate({
         girlfriendId: girlfriend.id,
@@ -165,7 +211,7 @@ export default function Chat() {
     scrollToBottom();
   }, [chatMessages]);
 
-  // 预加载语音列表
+  // 预加载浏览器语音列表
   useEffect(() => {
     if ("speechSynthesis" in window) {
       window.speechSynthesis.getVoices();
@@ -219,6 +265,9 @@ export default function Chat() {
     );
   }
 
+  // 语音引擎标签
+  const ttsLabel = ttsProvider === "elevenlabs" ? "ElevenLabs" : ttsProvider === "fishaudio" ? "Fish" : "";
+
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* 顶部导航栏 */}
@@ -234,7 +283,9 @@ export default function Chat() {
 
         <div className="flex-1">
           <h1 className="font-semibold">{girlfriend.name}</h1>
-          <p className="text-xs text-muted-foreground">在线</p>
+          <p className="text-xs text-muted-foreground">
+            在线{ttsLabel ? ` · 语音: ${ttsLabel}` : ""}
+          </p>
         </div>
 
         {/* 语音自动播放开关 */}
@@ -312,10 +363,14 @@ export default function Chat() {
                 {msg.role === "assistant" && msg.content && msg.content !== "[自拍照片]" && (
                   <button
                     onClick={() => handleSpeakMessage(msg.content)}
-                    className="self-start ml-1 text-muted-foreground hover:text-primary transition-colors"
-                    title="播放语音"
+                    className="self-start ml-1 text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+                    title={`播放语音${ttsLabel ? ` (${ttsLabel})` : ""}`}
                   >
-                    <Volume2 className="w-3.5 h-3.5" />
+                    {isSpeaking ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
                   </button>
                 )}
               </div>
