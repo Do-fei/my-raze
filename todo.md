@@ -62,3 +62,12 @@
   - [x] 启用 ThemeProvider 的 switchable 功能
   - [x] 所有页面添加主题切换按钮
   - [x] 设置页面添加主题切换开关
+
+## OpenRouter 适配（v1.2）
+- [x] 后端：新增 OpenRouter 模型列表查询 API
+- [x] 后端：修改对话逻辑适配 OpenRouter API 格式
+- [x] 数据库：api_configs 表注释更新为 OpenRouter
+- [x] 前端：设置页面 LLM 区域改为 OpenRouter 专属配置
+- [x] 前端：输入 API Key 后自动加载可用模型列表
+- [x] 前端：模型列表支持搜索、分组和选择
+- [x] 测试：编写 OpenRouter 相关单元测试（24 个测试全部通过）

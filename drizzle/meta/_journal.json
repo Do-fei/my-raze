@@ -15,6 +15,13 @@
       "when": 1771579971151,
       "tag": "0001_naive_speed_demon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1771667089572,
+      "tag": "0002_romantic_lord_tyger",
+      "breakpoints": true
     }
   ]
 }

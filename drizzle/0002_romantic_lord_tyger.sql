@@ -1,0 +1,1 @@
+ALTER TABLE `apiConfigs` MODIFY COLUMN `llmModel` varchar(200);

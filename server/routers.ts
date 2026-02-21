@@ -222,12 +222,13 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         // 7. 调用 LLM 获取回复
         let aiResponse: string;
         try {
-          if (apiConfig?.llmApiKey && apiConfig?.llmApiUrl) {
-            // 使用用户自定义的 LLM API
+          if (apiConfig?.llmApiKey) {
+            // 使用 OpenRouter API
+            const openRouterUrl = "https://openrouter.ai/api/v1/chat/completions";
             const response = await axios.post(
-              apiConfig.llmApiUrl,
+              openRouterUrl,
               {
-                model: apiConfig.llmModel || "grok-2-1212",
+                model: apiConfig.llmModel || "openai/gpt-4o-mini",
                 messages,
               },
               {
@@ -390,15 +391,59 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         z.object({
           falApiKey: z.string().optional(),
           llmApiKey: z.string().optional(),
-          llmApiUrl: z.string().url().optional(),
           llmModel: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
         return await upsertApiConfig({
           userId: ctx.user.id,
-          ...input,
+          falApiKey: input.falApiKey,
+          llmApiKey: input.llmApiKey,
+          llmApiUrl: input.llmApiKey ? "https://openrouter.ai/api/v1/chat/completions" : undefined,
+          llmModel: input.llmModel,
         });
+      }),
+
+    // 查询 OpenRouter 可用模型列表
+    fetchModels: protectedProcedure
+      .input(z.object({ apiKey: z.string().min(1) }))
+      .query(async ({ input }) => {
+        try {
+          const response = await axios.get("https://openrouter.ai/api/v1/models", {
+            headers: {
+              Authorization: `Bearer ${input.apiKey}`,
+            },
+          });
+
+          const models = response.data.data
+            .filter((m: any) => {
+              // 只保留支持文本对话的模型
+              const arch = m.architecture;
+              if (!arch) return true;
+              const inputMods = arch.input_modalities || [];
+              const outputMods = arch.output_modalities || [];
+              return inputMods.includes("text") && outputMods.includes("text");
+            })
+            .map((m: any) => ({
+              id: m.id,
+              name: m.name || m.id,
+              contextLength: m.context_length || 0,
+              pricing: {
+                prompt: m.pricing?.prompt || "0",
+                completion: m.pricing?.completion || "0",
+              },
+              provider: m.id.split("/")[0] || "unknown",
+            }))
+            .sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+          return { models, total: models.length };
+        } catch (error: any) {
+          console.error("[OpenRouter] Failed to fetch models:", error?.response?.status);
+          if (error?.response?.status === 401) {
+            throw new Error("API Key 无效，请检查后重试");
+          }
+          throw new Error("获取模型列表失败，请稍后重试");
+        }
       }),
   }),
 });

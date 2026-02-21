@@ -101,9 +101,9 @@ export const apiConfigs = mysqlTable("apiConfigs", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().unique(),
   falApiKey: varchar("falApiKey", { length: 200 }), // fal.ai API Key
-  llmApiKey: varchar("llmApiKey", { length: 200 }), // LLM API Key（如 XAI Grok）
-  llmApiUrl: varchar("llmApiUrl", { length: 500 }), // LLM API URL
-  llmModel: varchar("llmModel", { length: 100 }), // LLM 模型名称
+  llmApiKey: varchar("llmApiKey", { length: 200 }), // OpenRouter API Key
+  llmApiUrl: varchar("llmApiUrl", { length: 500 }), // LLM API URL (固定为 OpenRouter)
+  llmModel: varchar("llmModel", { length: 200 }), // 用户选择的模型 ID（如 openai/gpt-4o）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
