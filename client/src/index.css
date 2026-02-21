@@ -117,8 +117,23 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    /* 防止 iOS 弹性滚动 */
+    height: 100%;
+    overflow: hidden;
+  }
   body {
     @apply bg-background text-foreground;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    /* 防止 iOS 点击高亮 */
+    -webkit-tap-highlight-color: transparent;
+  }
+  #root {
+    height: 100%;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -130,6 +145,18 @@
   input[type="checkbox"]:not(:disabled),
   input[type="radio"]:not(:disabled) {
     @apply cursor-pointer;
+  }
+  /* 移动端触摸优化：最小点击区域 44px */
+  @media (max-width: 768px) {
+    button, [role="button"], a {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    /* 紧凑按钮例外 */
+    button[data-compact], .compact-btn {
+      min-height: auto;
+      min-width: auto;
+    }
   }
 }
 

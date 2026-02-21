@@ -154,8 +154,8 @@ export default function Setup() {
   const displayImage = imagePreview || existingImageUrl;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 dark:from-[oklch(0.16_0.02_330)] dark:via-[oklch(0.14_0.015_320)] dark:to-[oklch(0.16_0.02_300)] p-4">
-      <div className="max-w-2xl mx-auto py-8">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 dark:from-[oklch(0.16_0.02_330)] dark:via-[oklch(0.14_0.015_320)] dark:to-[oklch(0.16_0.02_300)] p-3 sm:p-4" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+      <div className="max-w-2xl mx-auto py-4 sm:py-8">
         <Button variant="ghost" className="mb-4" onClick={() => setLocation("/")}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           返回
@@ -163,7 +163,7 @@ export default function Setup() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">
+            <CardTitle className="text-xl sm:text-2xl">
               {isEditing ? "编辑女友配置" : "创建你的专属女友"}
             </CardTitle>
             <CardDescription>
@@ -179,9 +179,9 @@ export default function Setup() {
                 <Label htmlFor="image">
                   参考照片 {!isEditing && "*"}
                 </Label>
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex flex-col items-center gap-3 sm:gap-4">
                   {displayImage ? (
-                    <div className="relative w-48 h-48 rounded-lg overflow-hidden border-2 border-border">
+                    <div className="relative w-36 h-36 sm:w-48 sm:h-48 rounded-lg overflow-hidden border-2 border-border">
                       <img
                         src={displayImage}
                         alt="Preview"

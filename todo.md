@@ -125,3 +125,17 @@
 - [x] 前端 Settings：新增“AI 行为设定”卡片（全局提示词 + 6个快捷模板 + 高级选项）
 - [x] 前端 Setup：新增可折叠“高级提示词定制”区域 + 分层提示词预览面板
 - [x] 单元测试：71 个测试全部通过
+
+## v2.1 PWA 移动端适配
+- [x] PWA Manifest：创建 manifest.json（名称、图标、主题色、standalone 启动模式）
+- [x] Service Worker：实现离线缓存和资源预缓存策略
+- [x] iOS 适配：apple-touch-icon、apple-mobile-web-app-capable、status-bar-style
+- [x] Android 适配：theme-color、status bar 样式
+- [x] 响应式首页：女友卡片、导航栏、侧边栏在小屏幕自适应
+- [x] 响应式聊天页：输入框、消息气泡、顶栏在移动端优化
+- [x] 响应式设置页：表单和卡片在小屏幕自适应
+- [x] 响应式编辑页：图片上传和表单在移动端优化
+- [x] 安全区域适配：处理 iPhone 刘海屏和底部安全区域
+- [x] 触摸优化：按钮大小、间距适合手指操作，禁用双击缩放
+- [x] viewport 配置：禁止缩放、viewport-fit=cover
+- [x] 71 个单元测试全部通过

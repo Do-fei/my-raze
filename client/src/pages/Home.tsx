@@ -350,12 +350,12 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background">
       {/* 顶部导航栏 */}
-      <header className="flex items-center justify-between px-4 py-3 border-b bg-card sticky top-0 z-10">
+      <header className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b bg-card sticky top-0 z-10" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
         <div className="flex items-center gap-2">
-          <Heart className="w-6 h-6 text-primary" />
-          <h1 className="text-lg font-bold">My Raze</h1>
+          <Heart className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+          <h1 className="text-base sm:text-lg font-bold">My Raze</h1>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1">
           <Button
             variant="ghost"
             size="icon"
@@ -396,12 +396,12 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="p-4 max-w-2xl mx-auto space-y-6">
+      <div className="p-3 sm:p-4 max-w-2xl mx-auto space-y-4 sm:space-y-6 pb-8">
         {/* 欢迎信息 + 批量操作 */}
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <h2 className="text-2xl font-bold">你好，{user?.name || "朋友"} 👋</h2>
-            <p className="text-muted-foreground">选择一位女友开始聊天吧</p>
+            <h2 className="text-xl sm:text-2xl font-bold">你好，{user?.name || "朋友"} 👋</h2>
+            <p className="text-sm sm:text-base text-muted-foreground">选择一位女友开始聊天吧</p>
           </div>
           {girlfriends && girlfriends.length > 1 && (
             <Button
@@ -484,8 +484,8 @@ export default function Home() {
                     gf.isActive ? "ring-2 ring-primary" : ""
                   } ${isSelected ? "ring-2 ring-destructive bg-destructive/5" : ""}`}
                 >
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-4">
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-3 sm:gap-4">
                       {/* 批量选择复选框 */}
                       {batchMode && (
                         <div className="flex-shrink-0">
@@ -498,7 +498,7 @@ export default function Home() {
 
                       {/* 头像 */}
                       <div className="relative flex-shrink-0">
-                        <Avatar className="w-16 h-16">
+                        <Avatar className="w-12 h-12 sm:w-16 sm:h-16">
                           <AvatarImage src={gf.referenceImageUrl} alt={gf.name} />
                           <AvatarFallback className="text-lg">{gf.name[0]}</AvatarFallback>
                         </Avatar>
@@ -543,7 +543,7 @@ export default function Home() {
 
                       {/* 操作按钮 */}
                       {!batchMode && (
-                        <div className="flex flex-col gap-2 flex-shrink-0">
+                        <div className="flex flex-col gap-1.5 sm:gap-2 flex-shrink-0">
                           <Button
                             size="sm"
                             onClick={() => handleStartChat(gf.id)}
@@ -592,7 +592,7 @@ export default function Home() {
 
         {/* 快捷入口 */}
         {girlfriends && girlfriends.length > 0 && !batchMode && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
             <Card
               className="cursor-pointer hover:shadow-md transition-all"
               onClick={() => setLocation("/gallery")}
@@ -634,7 +634,7 @@ export default function Home() {
           setDebouncedKeyword("");
         }
       }}>
-        <SheetContent side="left" className="w-[320px] sm:max-w-[360px] p-0">
+          <SheetContent side="left" className="w-[85vw] max-w-[360px] p-0">
           <SheetHeader className="p-4 pb-2 border-b">
             <SheetTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-primary" />
@@ -758,7 +758,7 @@ export default function Home() {
 
       {/* 回收站侧边栏 */}
       <Sheet open={trashOpen} onOpenChange={setTrashOpen}>
-        <SheetContent side="right" className="w-[320px] sm:max-w-[360px] p-0">
+          <SheetContent side="right" className="w-[85vw] max-w-[360px] p-0">
           <SheetHeader className="p-4 pb-3 border-b">
             <SheetTitle className="flex items-center gap-2">
               <Trash className="w-5 h-5 text-destructive" />

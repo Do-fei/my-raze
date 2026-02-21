@@ -338,19 +338,19 @@ export default function Chat() {
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* 顶部导航栏 */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b bg-card">
+      <header className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2 sm:py-3 border-b bg-card" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
         <Button variant="ghost" size="icon" onClick={() => setLocation("/")}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
 
-        <Avatar className="w-10 h-10">
+        <Avatar className="w-8 h-8 sm:w-10 sm:h-10">
           <AvatarImage src={girlfriend.referenceImageUrl} alt={girlfriend.name} />
           <AvatarFallback>{girlfriend.name[0]}</AvatarFallback>
         </Avatar>
 
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="font-semibold">{girlfriend.name}</h1>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <h1 className="font-semibold text-sm sm:text-base truncate">{girlfriend.name}</h1>
             {currentMoodInfo && (
               <span className="text-sm" title={`${currentMoodInfo.label} (${moodData!.moodScore}分)`}>
                 {currentMoodInfo.emoji}
@@ -371,10 +371,11 @@ export default function Chat() {
         <Button
           variant={autoPlay ? "default" : "ghost"}
           size="icon"
+          className="h-8 w-8 sm:h-10 sm:w-10"
           onClick={toggleAutoPlay}
           title={autoPlay ? "关闭自动语音" : "开启自动语音"}
         >
-          {autoPlay ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          {autoPlay ? <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" /> : <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />}
         </Button>
 
         {/* 播放速度控制 */}
@@ -382,7 +383,7 @@ export default function Chat() {
           <Button
             variant="ghost"
             size="sm"
-            className="text-xs font-mono px-2 h-8"
+            className="text-xs font-mono px-1.5 sm:px-2 h-8"
             onClick={() => setShowSpeedMenu(!showSpeedMenu)}
             title="语音播放速度"
           >
@@ -409,21 +410,21 @@ export default function Chat() {
           )}
         </div>
 
-        <Button variant="ghost" size="icon" onClick={toggleTheme}>
-          {theme === "light" ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+        <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-10 sm:w-10" onClick={toggleTheme}>
+          {theme === "light" ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
         </Button>
 
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/gallery")}>
+        <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={() => setLocation("/gallery")}>
           <ImageIcon className="w-5 h-5" />
         </Button>
 
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/settings")}>
+        <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={() => setLocation("/settings")}>
           <Settings className="w-5 h-5" />
         </Button>
       </header>
 
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4">
         {!chatMessages || chatMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Heart className="w-12 h-12 text-primary mb-4" />
@@ -445,7 +446,7 @@ export default function Chat() {
                 </Avatar>
               )}
 
-              <div className="flex flex-col gap-1 max-w-[75%]">
+              <div className="flex flex-col gap-1 max-w-[80%] sm:max-w-[75%]">
                 <div
                   className={`rounded-2xl px-4 py-2 ${
                     msg.role === "user"
@@ -530,7 +531,7 @@ export default function Chat() {
       </div>
 
       {/* 输入框 */}
-      <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-4 border-t bg-card">
+      <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-2 sm:p-4 border-t bg-card" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
         <Button
           type="button"
           variant="ghost"

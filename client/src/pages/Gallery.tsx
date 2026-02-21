@@ -52,7 +52,7 @@ export default function Gallery() {
   return (
     <div className="min-h-screen bg-background">
       {/* 顶部导航栏 */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b bg-card sticky top-0 z-10">
+      <header className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 border-b bg-card sticky top-0 z-10" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
         <Button variant="ghost" size="icon" onClick={() => setLocation("/")}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -63,7 +63,7 @@ export default function Gallery() {
       </header>
 
       {/* 画廊内容 */}
-      <div className="p-4 max-w-4xl mx-auto">
+      <div className="p-2 sm:p-4 max-w-4xl mx-auto pb-8">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -82,7 +82,7 @@ export default function Gallery() {
             <p className="text-sm text-muted-foreground mb-4">
               共 {selfies.length} 张照片
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
               {selfies.map((selfie) => (
                 <Card key={selfie.id} className="overflow-hidden group relative">
                   <img

@@ -311,18 +311,18 @@ export default function Settings() {
   return (
     <div className="min-h-screen bg-background">
       {/* 顶部导航栏 */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b bg-card sticky top-0 z-10">
+      <header className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 border-b bg-card sticky top-0 z-10" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
         <Button variant="ghost" size="icon" onClick={() => setLocation("/")}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <h1 className="text-lg font-semibold flex-1">设置</h1>
+        <h1 className="text-base sm:text-lg font-semibold flex-1">设置</h1>
         <Button variant="ghost" size="icon" onClick={toggleTheme}>
           {theme === "light" ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
         </Button>
       </header>
 
       {/* 设置内容 */}
-      <div className="p-4 max-w-2xl mx-auto space-y-6">
+      <div className="p-3 sm:p-4 max-w-2xl mx-auto space-y-4 sm:space-y-6 pb-8">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
