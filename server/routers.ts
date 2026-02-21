@@ -38,8 +38,11 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   checkAndCreateProactiveNotification,
+  getIntimacyInfo,
+  addIntimacyPoints,
 } from "./db";
 import { DEFAULT_GIRLFRIEND } from "../shared/defaultGirlfriend";
+import { POINTS_RULES, DAILY_POINTS_LIMIT, getLevelByPoints, getLevelInfo, getNextLevel, getLevelProgress, getPointsToNextLevel } from "../shared/intimacy";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { invokeLLM } from "./_core/llm";
@@ -233,6 +236,104 @@ export const appRouter = router({
       });
       return girlfriend;
     }),
+
+    // ============ 亲密度系统 ============
+
+    // 获取亲密度信息（含衰减计算）
+    getIntimacy: protectedProcedure
+      .input(z.object({ girlfriendId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const info = await getIntimacyInfo(input.girlfriendId, ctx.user.id);
+        const levelInfo = getLevelInfo(info.intimacyLevel);
+        const nextLevel = getNextLevel(info.intimacyLevel);
+        const progress = getLevelProgress(info.intimacyPoints);
+        const pointsToNext = getPointsToNextLevel(info.intimacyPoints);
+
+        return {
+          ...info,
+          levelInfo,
+          nextLevel,
+          progress,
+          pointsToNext,
+        };
+      }),
+
+    // 增加亲密度经验值
+    addPoints: protectedProcedure
+      .input(
+        z.object({
+          girlfriendId: z.number(),
+          reason: z.enum([
+            "text_message",
+            "voice_message",
+            "selfie",
+            "daily_first",
+            "edit_profile",
+            "long_conversation",
+            "night_chat",
+          ]),
+          messageLength: z.number().optional(), // 消息长度（用于加成计算）
+          voiceDuration: z.number().optional(), // 语音时长（秒）
+          conversationRounds: z.number().optional(), // 对话轮数
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const rule = POINTS_RULES[input.reason];
+        if (!rule) throw new TRPCError({ code: "BAD_REQUEST", message: "无效的经验值类型" });
+
+        // 计算基础经验值
+        let points = rule.basePoints;
+
+        // 加成计算
+        switch (input.reason) {
+          case "text_message":
+            if (input.messageLength && input.messageLength > 50) {
+              points += rule.bonusPoints || 0;
+            }
+            break;
+          case "voice_message":
+            if (input.voiceDuration && input.voiceDuration > 30) {
+              points += rule.bonusPoints || 0;
+            }
+            break;
+          case "long_conversation":
+            if (input.conversationRounds && input.conversationRounds > 10) {
+              points += rule.bonusPoints || 0;
+            }
+            break;
+          default:
+            // 其他类型使用基础经验值
+            break;
+        }
+
+        // 过滤过短消息（< 5 字不计算）
+        if (input.reason === "text_message" && input.messageLength && input.messageLength < 5) {
+          return {
+            intimacyLevel: 0,
+            intimacyPoints: 0,
+            previousLevel: 0,
+            leveledUp: false,
+            consecutiveDays: 0,
+            pointsAdded: 0,
+            skipped: true,
+            skipReason: "消息过短，不计算经验值",
+          };
+        }
+
+        const result = await addIntimacyPoints(
+          input.girlfriendId,
+          ctx.user.id,
+          points,
+          input.reason
+        );
+
+        return {
+          ...result,
+          pointsAdded: points,
+          skipped: false,
+          skipReason: null,
+        };
+      }),
   }),
 
   // ============ Conversation Management ============

@@ -190,3 +190,15 @@
 - [x] 后端：voice.transcribe 支持 Manus 内置/OpenAI 双 API 切换
 - [x] 前端：Settings 页面添加语音转写配置卡片（提供商选择 + API Key 输入）
 - [x] 测试：语音转写 API 切换测试（104/105 测试通过，1 个已有测试失败与新功能无关）
+
+## v3.0 亲密度等级系统
+- [x] 数据库：girlfriends 表添加 intimacyLevel、intimacyPoints、lastInteractionAt、consecutiveDays 字段
+- [x] 共享常量：创建 shared/intimacy.ts 定义等级、经验值规则、称呼等
+- [x] 后端：db.ts 添加亲密度相关查询函数
+- [x] 后端：routers.ts 新增 girlfriend.addPoints 和 girlfriend.getIntimacy 过程
+- [x] 前端：Home.tsx 女友卡片显示等级徽章和进度条
+- [x] 前端：Chat.tsx 顶栏显示等级徽章，点击弹出详情面板
+- [x] 前端：升级动画组件（爱心粒子特效 + 解锁内容展示）
+- [x] 前端：Chat.tsx 发送消息/语音/自拍后自动触发经验值增加
+- [x] 前端：Setup.tsx 编辑资料/上传头像后触发经验值增加
+- [x] 测试：亲密度经验值计算和等级升级测试（39 个新测试全部通过，总计 143/144）

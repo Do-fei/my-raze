@@ -881,3 +881,188 @@ export async function checkAndCreateProactiveNotification(userId: number): Promi
 
   return notification;
 }
+
+
+// ============ Intimacy Functions ============
+
+import {
+  getLevelByPoints,
+  calculateDecay,
+  DAILY_POINTS_LIMIT,
+  isNightTime,
+} from "../shared/intimacy";
+
+/**
+ * 获取女友的亲密度信息（含衰减计算）
+ */
+export async function getIntimacyInfo(girlfriendId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(girlfriends)
+    .where(and(eq(girlfriends.id, girlfriendId), eq(girlfriends.userId, userId)))
+    .limit(1);
+
+  if (!result[0]) throw new Error("Girlfriend not found");
+
+  const gf = result[0];
+
+  // 计算衰减
+  const { points: decayedPoints, decayed } = calculateDecay(
+    gf.intimacyPoints,
+    gf.lastInteractionAt,
+    gf.intimacyLevel
+  );
+
+  // 如果有衰减，更新数据库
+  if (decayed > 0) {
+    const newLevel = getLevelByPoints(decayedPoints);
+    await db
+      .update(girlfriends)
+      .set({
+        intimacyPoints: decayedPoints,
+        intimacyLevel: newLevel.level,
+      })
+      .where(eq(girlfriends.id, girlfriendId));
+
+    return {
+      intimacyLevel: newLevel.level,
+      intimacyPoints: decayedPoints,
+      lastInteractionAt: gf.lastInteractionAt,
+      consecutiveDays: gf.consecutiveDays,
+      decayed,
+    };
+  }
+
+  return {
+    intimacyLevel: gf.intimacyLevel,
+    intimacyPoints: gf.intimacyPoints,
+    lastInteractionAt: gf.lastInteractionAt,
+    consecutiveDays: gf.consecutiveDays,
+    decayed: 0,
+  };
+}
+
+/**
+ * 获取今日已获得的经验值总量
+ */
+export async function getTodayPoints(girlfriendId: number, userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  // 使用 girlfriendMoods 表的 todayMessages 作为近似值
+  // 或者我们直接从数据库计算（简化实现，使用内存追踪）
+  // 这里我们返回一个近似值，实际实现可以用 Redis 或单独的表
+  return 0; // 前端会追踪每日上限
+}
+
+/**
+ * 增加亲密度经验值
+ * @returns 新的亲密度信息和是否升级
+ */
+export async function addIntimacyPoints(
+  girlfriendId: number,
+  userId: number,
+  points: number,
+  reason: string
+): Promise<{
+  intimacyLevel: number;
+  intimacyPoints: number;
+  previousLevel: number;
+  leveledUp: boolean;
+  consecutiveDays: number;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(girlfriends)
+    .where(and(eq(girlfriends.id, girlfriendId), eq(girlfriends.userId, userId)))
+    .limit(1);
+
+  if (!result[0]) throw new Error("Girlfriend not found");
+
+  const gf = result[0];
+  const previousLevel = gf.intimacyLevel;
+  const now = new Date();
+
+  // 计算连续天数
+  let newConsecutiveDays = gf.consecutiveDays;
+  if (gf.lastInteractionAt) {
+    const lastDate = new Date(gf.lastInteractionAt);
+    const todayStr = now.toISOString().slice(0, 10);
+    const lastDateStr = lastDate.toISOString().slice(0, 10);
+
+    if (todayStr !== lastDateStr) {
+      // 不同天
+      const diffDays = Math.floor(
+        (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      if (diffDays <= 1) {
+        newConsecutiveDays += 1;
+      } else {
+        newConsecutiveDays = 1; // 中断了，重新计数
+      }
+    }
+    // 同一天不增加连续天数
+  } else {
+    newConsecutiveDays = 1; // 首次互动
+  }
+
+  // 夜间加成
+  let totalPoints = points;
+  if (isNightTime(now) && reason !== "night_chat") {
+    totalPoints += 3; // 夜间额外加成
+  }
+
+  const newPoints = gf.intimacyPoints + totalPoints;
+  const newLevelInfo = getLevelByPoints(newPoints);
+  const leveledUp = newLevelInfo.level > previousLevel;
+
+  await db
+    .update(girlfriends)
+    .set({
+      intimacyPoints: newPoints,
+      intimacyLevel: newLevelInfo.level,
+      lastInteractionAt: now,
+      consecutiveDays: newConsecutiveDays,
+    })
+    .where(eq(girlfriends.id, girlfriendId));
+
+  return {
+    intimacyLevel: newLevelInfo.level,
+    intimacyPoints: newPoints,
+    previousLevel,
+    leveledUp,
+    consecutiveDays: newConsecutiveDays,
+  };
+}
+
+/**
+ * 获取女友基础亲密度数据（不含衰减计算，用于列表展示）
+ */
+export async function getGirlfriendIntimacy(girlfriendId: number): Promise<{
+  intimacyLevel: number;
+  intimacyPoints: number;
+  consecutiveDays: number;
+  lastInteractionAt: Date | null;
+} | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db
+    .select({
+      intimacyLevel: girlfriends.intimacyLevel,
+      intimacyPoints: girlfriends.intimacyPoints,
+      consecutiveDays: girlfriends.consecutiveDays,
+      lastInteractionAt: girlfriends.lastInteractionAt,
+    })
+    .from(girlfriends)
+    .where(eq(girlfriends.id, girlfriendId))
+    .limit(1);
+
+  return result[0] || null;
+}

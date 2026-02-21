@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { VoiceRecordButton } from "@/components/VoiceRecordButton";
+import { LevelUpAnimation } from "@/components/LevelUpAnimation";
+import { IntimacyPanel } from "@/components/IntimacyPanel";
+import { getLevelInfo, getLevelProgress, getLevelGradient } from "../../../shared/intimacy";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
@@ -174,6 +177,9 @@ export default function Chat() {
   const [inputMode, setInputMode] = useState<"text" | "voice">(() => {
     return (localStorage.getItem("chat-input-mode") as "text" | "voice") || "text";
   });
+  const [showIntimacyPanel, setShowIntimacyPanel] = useState(false);
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [levelUpLevel, setLevelUpLevel] = useState(1);
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(
     conversationId
   );
@@ -218,6 +224,16 @@ export default function Chat() {
     },
   });
 
+  // 亲密度经验值 mutation
+  const addPoints = trpc.girlfriend.addPoints.useMutation({
+    onSuccess: (data) => {
+      if (data.leveledUp && data.intimacyLevel) {
+        setLevelUpLevel(data.intimacyLevel);
+        setShowLevelUp(true);
+      }
+    },
+  });
+
   const sendMessage = trpc.chat.sendMessage.useMutation({
     onSuccess: async (data) => {
       await refetchMessages();
@@ -237,6 +253,13 @@ export default function Chat() {
             isUserMessage: false,
           });
         }
+
+        // 触发亲密度经验值增加
+        addPoints.mutate({
+          girlfriendId: girlfriend.id,
+          reason: "text_message",
+          messageLength: message.trim().length,
+        });
       }
 
       // 如果开启了自动语音播放，朗读 AI 回复
@@ -269,6 +292,13 @@ export default function Chat() {
       await refetchMessages();
       toast.success("自拍照片生成成功！");
       scrollToBottom();
+      // 触发自拍亲密度经验值
+      if (girlfriend) {
+        addPoints.mutate({
+          girlfriendId: girlfriend.id,
+          reason: "selfie",
+        });
+      }
     },
     onError: (error) => {
       toast.error(`生成自拍失败：${error.message}`);
@@ -373,6 +403,14 @@ export default function Chat() {
                 content: data.text,
               });
               toast.success(`语音识别成功（${data.duration?.toFixed(1) || 0}秒）`);
+              // 触发语音消息亲密度经验值
+              if (girlfriend) {
+                addPoints.mutate({
+                  girlfriendId: girlfriend.id,
+                  reason: "voice_message",
+                  voiceDuration: recordingDurationRef.current,
+                });
+              }
             } else {
               toast.error("未识别到有效语音内容，请重试");
             }
@@ -442,6 +480,21 @@ export default function Chat() {
                 {currentMoodInfo.emoji}
               </span>
             )}
+            {/* 亲密度徽章 */}
+            {(() => {
+              const level = girlfriend.intimacyLevel || 1;
+              const info = getLevelInfo(level);
+              return (
+                <button
+                  className={`text-xs flex items-center gap-0.5 ${info.color} hover:opacity-80 transition-opacity`}
+                  onClick={() => setShowIntimacyPanel(true)}
+                  title={`亲密度: ${info.name} Lv.${level}`}
+                >
+                  <span>{info.emoji}</span>
+                  <span className="font-medium">Lv.{level}</span>
+                </button>
+              );
+            })()}
           </div>
           <p className="text-xs text-muted-foreground">
             {currentMoodInfo ? (
@@ -701,6 +754,23 @@ export default function Chat() {
           </>
         )}
       </form>
+
+      {/* 亲密度详情面板 */}
+      <IntimacyPanel
+        open={showIntimacyPanel}
+        onOpenChange={setShowIntimacyPanel}
+        intimacyLevel={girlfriend.intimacyLevel || 1}
+        intimacyPoints={girlfriend.intimacyPoints || 0}
+        consecutiveDays={girlfriend.consecutiveDays || 0}
+        girlfriendName={girlfriend.name}
+      />
+
+      {/* 升级动画 */}
+      <LevelUpAnimation
+        show={showLevelUp}
+        newLevel={levelUpLevel}
+        onClose={() => setShowLevelUp(false)}
+      />
     </div>
   );
 }

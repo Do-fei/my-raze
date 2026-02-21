@@ -34,6 +34,10 @@ export const girlfriends = mysqlTable("girlfriends", {
   customPrompt: text("customPrompt"), // 个体定制提示词，追加在全局提示词之后
   avatarUrl: text("avatarUrl"), // 头像图片 URL（S3）
   avatarKey: varchar("avatarKey", { length: 500 }), // 头像 S3 文件 key
+  intimacyLevel: int("intimacyLevel").default(1).notNull(), // 亲密度等级 1-10
+  intimacyPoints: int("intimacyPoints").default(0).notNull(), // 亲密度经验值
+  lastInteractionAt: timestamp("lastInteractionAt"), // 最后互动时间
+  consecutiveDays: int("consecutiveDays").default(0).notNull(), // 连续互动天数
   isActive: boolean("isActive").default(true).notNull(), // 是否为当前激活的女友
   deletedAt: timestamp("deletedAt"), // 软删除时间，null 表示未删除，有值表示已删除（7天后可永久清除）
   createdAt: timestamp("createdAt").defaultNow().notNull(),

@@ -54,6 +54,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { NotificationBell } from "@/components/NotificationBell";
 import { usePullToRefresh } from "@/hooks/useGestures";
 import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
+import { getLevelInfo, getLevelProgress, getLevelGradient, getPointsToNextLevel } from "../../../shared/intimacy";
 
 // 心情配置
 const MOOD_CONFIG: Record<string, { emoji: string; label: string; color: string; bgColor: string }> = {
@@ -124,6 +125,9 @@ export default function Home() {
     { enabled: isAuthenticated }
   );
 
+  // 亲密度信息缓存 map
+  const [intimacyMap, setIntimacyMap] = useState<Record<number, { level: number; points: number; progress: number; pointsToNext: number | null }>>({});
+
   // 心情 map：girlfriendId -> mood
   const moodMap = useMemo(() => {
     const map: Record<number, typeof allMoods extends (infer T)[] | undefined ? T : never> = {};
@@ -142,6 +146,24 @@ export default function Home() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchKeyword]);
+
+  // 计算亲密度信息（从女友数据中直接读取）
+  useEffect(() => {
+    if (girlfriends && girlfriends.length > 0) {
+      const map: Record<number, { level: number; points: number; progress: number; pointsToNext: number | null }> = {};
+      for (const gf of girlfriends) {
+        const level = gf.intimacyLevel || 1;
+        const points = gf.intimacyPoints || 0;
+        map[gf.id] = {
+          level,
+          points,
+          progress: getLevelProgress(points),
+          pointsToNext: getPointsToNextLevel(points),
+        };
+      }
+      setIntimacyMap(map);
+    }
+  }, [girlfriends]);
 
   // 确保默认女友存在
   const ensureDefault = trpc.girlfriend.ensureDefault.useMutation({
@@ -541,10 +563,52 @@ export default function Home() {
                               当前
                             </Badge>
                           )}
+                          {/* 亲密度等级徽章 */}
+                          {(() => {
+                            const intimacy = intimacyMap[gf.id];
+                            if (!intimacy) return null;
+                            const levelInfo = getLevelInfo(intimacy.level);
+                            return (
+                              <span
+                                className={`text-xs flex-shrink-0 flex items-center gap-0.5 ${levelInfo.color}`}
+                                title={`${levelInfo.name} Lv.${levelInfo.level} - ${intimacy.points}经验值`}
+                              >
+                                <span>{levelInfo.emoji}</span>
+                                <span className="font-medium">Lv.{levelInfo.level}</span>
+                              </span>
+                            );
+                          })()}
                         </div>
                         <p className="text-sm text-muted-foreground line-clamp-1">
                           {gf.personality}
                         </p>
+                        {/* 亲密度进度条 */}
+                        {(() => {
+                          const intimacy = intimacyMap[gf.id];
+                          if (!intimacy) return null;
+                          const levelInfo = getLevelInfo(intimacy.level);
+                          const gradient = getLevelGradient(intimacy.level);
+                          return (
+                            <div className="mt-1.5">
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className={`text-[10px] font-medium ${levelInfo.color}`}>
+                                  {levelInfo.name}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {intimacy.pointsToNext !== null
+                                    ? `还需 ${intimacy.pointsToNext} 升级`
+                                    : "已满级 ✨"}
+                                </span>
+                              </div>
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full bg-gradient-to-r ${gradient} transition-all duration-500`}
+                                  style={{ width: `${intimacy.progress}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {/* 心情状态文字 */}
                         {moodInfo && (
                           <div className="flex items-center gap-1.5 mt-1">
