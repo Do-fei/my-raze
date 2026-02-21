@@ -24,6 +24,7 @@ import {
   Square,
   Trash,
   Undo2,
+  LogOut,
 } from "lucide-react";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useLocation } from "wouter";
@@ -75,6 +76,13 @@ export default function Home() {
   const [batchMode, setBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+
+  // 退出登录
+  const logout = trpc.auth.logout.useMutation({
+    onSuccess: () => {
+      window.location.href = "/";
+    },
+  });
 
   const { data: girlfriends, isLoading: girlfriendsLoading, refetch } = trpc.girlfriend.list.useQuery(
     undefined,
@@ -375,6 +383,15 @@ export default function Home() {
           </Button>
           <Button variant="ghost" size="icon" onClick={() => setLocation("/settings")}>
             <Settings className="w-5 h-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => logout.mutate()}
+            title="退出登录"
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <LogOut className="w-5 h-5" />
           </Button>
         </div>
       </header>

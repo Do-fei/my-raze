@@ -683,11 +683,11 @@ export async function createDefaultGirlfriend(userId: number, data: InsertGirlfr
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // 检查用户是否已有女友
+  // 检查用户是否已有未删除的女友
   const existing = await db
     .select()
     .from(girlfriends)
-    .where(eq(girlfriends.userId, userId))
+    .where(and(eq(girlfriends.userId, userId), isNull(girlfriends.deletedAt)))
     .limit(1);
 
   if (existing.length > 0) {
