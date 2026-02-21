@@ -15,6 +15,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/setup" component={Setup} />
+      <Route path="/setup/:id" component={Setup} />
       <Route path="/chat" component={Chat} />
       <Route path="/chat/:id" component={Chat} />
       <Route path="/gallery" component={Gallery} />
@@ -28,7 +29,10 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="light">
+      <ThemeProvider
+        defaultTheme="light"
+        switchable
+      >
         <TooltipProvider>
           <Toaster />
           <Router />
