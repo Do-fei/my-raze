@@ -23,6 +23,10 @@ import {
   getUserApiConfig,
   getConversationsWithLastMessage,
   createDefaultGirlfriend,
+  searchConversations,
+  getGirlfriendMood,
+  upsertGirlfriendMood,
+  getAllGirlfriendMoods,
 } from "./db";
 import { DEFAULT_GIRLFRIEND } from "../shared/defaultGirlfriend";
 import { storagePut } from "./storage";
@@ -191,6 +195,13 @@ export const appRouter = router({
       .input(z.object({ conversationId: z.number() }))
       .query(async ({ input }) => {
         return await getConversationMessages(input.conversationId);
+      }),
+
+    // 搜索对话（按消息内容关键词）
+    search: protectedProcedure
+      .input(z.object({ keyword: z.string().min(1).max(100) }))
+      .query(async ({ ctx, input }) => {
+        return await searchConversations(ctx.user.id, input.keyword);
       }),
   }),
 
@@ -552,6 +563,130 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           }
           throw new Error("获取模型列表失败，请稍后重试");
         }
+      }),
+  }),
+
+  // ============ Mood System ============
+  mood: router({
+    // 获取指定女友的心情
+    get: protectedProcedure
+      .input(z.object({ girlfriendId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        return await getGirlfriendMood(ctx.user.id, input.girlfriendId);
+      }),
+
+    // 获取所有女友的心情
+    getAll: protectedProcedure.query(async ({ ctx }) => {
+      return await getAllGirlfriendMoods(ctx.user.id);
+    }),
+
+    // 更新心情（在发送消息后调用）
+    update: protectedProcedure
+      .input(
+        z.object({
+          girlfriendId: z.number(),
+          messageContent: z.string(),
+          isUserMessage: z.boolean(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        // 获取当前心情
+        const currentMood = await getGirlfriendMood(ctx.user.id, input.girlfriendId);
+
+        let moodScore = currentMood?.moodScore ?? 70;
+        let totalMessages = currentMood?.totalMessages ?? 0;
+        let todayMessages = currentMood?.todayMessages ?? 0;
+
+        // 检查是否是新的一天，重置今日消息数
+        const now = new Date();
+        const lastUpdate = currentMood?.lastMoodUpdate;
+        if (lastUpdate) {
+          const lastDay = new Date(lastUpdate).toDateString();
+          const today = now.toDateString();
+          if (lastDay !== today) {
+            todayMessages = 0;
+          }
+        }
+
+        // 增加消息计数
+        totalMessages += 1;
+        todayMessages += 1;
+
+        // 基于聊天内容调整心情分数
+        const content = input.messageContent.toLowerCase();
+
+        // 积极情绪关键词
+        const positiveKeywords = [
+          "爱", "喜欢", "开心", "快乐", "幸福", "漂亮", "可爱", "棒", "好棒",
+          "想你", "想念", "亲亲", "抱抱", "宝贝", "亲爱", "美丽", "温柔",
+          "谢谢", "感谢", "太好了", "开心", "哈哈", "嘻嘻",
+          "love", "happy", "cute", "beautiful", "miss", "hug", "kiss",
+        ];
+
+        // 消极情绪关键词
+        const negativeKeywords = [
+          "生气", "不开心", "难过", "伤心", "无聊", "烦", "累", "讨厌",
+          "分手", "再见", "拜拜", "不想", "笨", "丑", "差",
+          "sad", "angry", "boring", "hate", "bye", "ugly",
+        ];
+
+        // 计算情绪变化
+        let scoreDelta = 0;
+
+        // 用户发消息本身就是正面信号（表示在乎）
+        if (input.isUserMessage) {
+          scoreDelta += 2;
+        }
+
+        for (const kw of positiveKeywords) {
+          if (content.includes(kw)) {
+            scoreDelta += 3;
+            break;
+          }
+        }
+
+        for (const kw of negativeKeywords) {
+          if (content.includes(kw)) {
+            scoreDelta -= 5;
+            break;
+          }
+        }
+
+        // 今日聊天数量加成
+        if (todayMessages >= 20) scoreDelta += 2;
+        else if (todayMessages >= 10) scoreDelta += 1;
+
+        // 时间衰减：如果上次聊天超过24小时，心情下降
+        if (currentMood?.lastChatAt) {
+          const hoursSinceLastChat = (now.getTime() - new Date(currentMood.lastChatAt).getTime()) / 3600000;
+          if (hoursSinceLastChat > 48) scoreDelta -= 10;
+          else if (hoursSinceLastChat > 24) scoreDelta -= 5;
+        }
+
+        // 更新分数（限制在 0-100 范围）
+        moodScore = Math.max(0, Math.min(100, moodScore + scoreDelta));
+
+        // 根据分数确定心情状态
+        let mood: "excited" | "happy" | "content" | "neutral" | "lonely" | "sad";
+        if (moodScore >= 90) mood = "excited";
+        else if (moodScore >= 70) mood = "happy";
+        else if (moodScore >= 50) mood = "content";
+        else if (moodScore >= 30) mood = "neutral";
+        else if (moodScore >= 15) mood = "lonely";
+        else mood = "sad";
+
+        const result = await upsertGirlfriendMood({
+          userId: ctx.user.id,
+          girlfriendId: input.girlfriendId,
+          mood,
+          moodScore,
+          lastChatAt: now,
+          totalMessages,
+          todayMessages,
+          lastMoodUpdate: now,
+        });
+
+        return result;
       }),
   }),
 

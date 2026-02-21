@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import {
@@ -15,9 +16,10 @@ import {
   Sparkles,
   Edit,
   Clock,
-  Menu,
+  Search,
+  X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
@@ -32,12 +34,25 @@ import {
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+// 心情配置
+const MOOD_CONFIG: Record<string, { emoji: string; label: string; color: string; bgColor: string }> = {
+  excited: { emoji: "🥰", label: "超开心", color: "text-pink-500", bgColor: "bg-pink-500/10" },
+  happy: { emoji: "😊", label: "开心", color: "text-green-500", bgColor: "bg-green-500/10" },
+  content: { emoji: "🙂", label: "满足", color: "text-blue-500", bgColor: "bg-blue-500/10" },
+  neutral: { emoji: "😐", label: "平静", color: "text-yellow-500", bgColor: "bg-yellow-500/10" },
+  lonely: { emoji: "😢", label: "想你了", color: "text-purple-500", bgColor: "bg-purple-500/10" },
+  sad: { emoji: "😭", label: "伤心", color: "text-red-500", bgColor: "bg-red-500/10" },
+};
+
 export default function Home() {
   const { user, loading, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const defaultCreatedRef = useRef(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { data: girlfriends, isLoading: girlfriendsLoading, refetch } = trpc.girlfriend.list.useQuery(
     undefined,
@@ -49,6 +64,37 @@ export default function Home() {
     undefined,
     { enabled: isAuthenticated }
   );
+
+  // 搜索对话
+  const { data: searchResults, isLoading: searchLoading } = trpc.conversation.search.useQuery(
+    { keyword: debouncedKeyword },
+    { enabled: !!debouncedKeyword && debouncedKeyword.length > 0 }
+  );
+
+  // 获取所有女友心情
+  const { data: allMoods } = trpc.mood.getAll.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  // 心情 map：girlfriendId -> mood
+  const moodMap = useMemo(() => {
+    const map: Record<number, typeof allMoods extends (infer T)[] | undefined ? T : never> = {};
+    if (allMoods) {
+      for (const m of allMoods) {
+        map[m.girlfriendId] = m;
+      }
+    }
+    return map;
+  }, [allMoods]);
+
+  // 搜索防抖
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedKeyword(searchKeyword.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchKeyword]);
 
   // 确保默认女友存在
   const ensureDefault = trpc.girlfriend.ensureDefault.useMutation({
@@ -97,6 +143,10 @@ export default function Home() {
     if (diffDays < 7) return `${diffDays}天前`;
     return d.toLocaleDateString();
   };
+
+  // 侧边栏展示的对话列表（搜索结果或全部）
+  const displayConversations = debouncedKeyword ? searchResults : conversationsWithDetails;
+  const isSearchMode = !!debouncedKeyword;
 
   if (loading) {
     return (
@@ -238,58 +288,87 @@ export default function Home() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {girlfriends.map((gf) => (
-              <Card
-                key={gf.id}
-                className={`transition-all hover:shadow-md ${
-                  gf.isActive ? "ring-2 ring-primary" : ""
-                }`}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-4">
-                    {/* 头像 */}
-                    <Avatar className="w-16 h-16 flex-shrink-0">
-                      <AvatarImage src={gf.referenceImageUrl} alt={gf.name} />
-                      <AvatarFallback className="text-lg">{gf.name[0]}</AvatarFallback>
-                    </Avatar>
+            {girlfriends.map((gf) => {
+              const mood = moodMap[gf.id];
+              const moodInfo = mood ? MOOD_CONFIG[mood.mood] : null;
 
-                    {/* 信息 */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-lg truncate">{gf.name}</h3>
-                        {gf.isActive && (
-                          <Badge variant="default" className="text-xs flex-shrink-0">
-                            当前
-                          </Badge>
+              return (
+                <Card
+                  key={gf.id}
+                  className={`transition-all hover:shadow-md ${
+                    gf.isActive ? "ring-2 ring-primary" : ""
+                  }`}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      {/* 头像 */}
+                      <div className="relative flex-shrink-0">
+                        <Avatar className="w-16 h-16">
+                          <AvatarImage src={gf.referenceImageUrl} alt={gf.name} />
+                          <AvatarFallback className="text-lg">{gf.name[0]}</AvatarFallback>
+                        </Avatar>
+                        {/* 心情气泡 */}
+                        {moodInfo && (
+                          <div
+                            className={`absolute -bottom-1 -right-1 w-7 h-7 rounded-full ${moodInfo.bgColor} flex items-center justify-center border-2 border-background text-sm`}
+                            title={`${moodInfo.label} (${mood!.moodScore}分)`}
+                          >
+                            {moodInfo.emoji}
+                          </div>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {gf.personality}
-                      </p>
-                    </div>
 
-                    {/* 操作按钮 */}
-                    <div className="flex flex-col gap-2 flex-shrink-0">
-                      <Button
-                        size="sm"
-                        onClick={() => handleStartChat(gf.id)}
-                      >
-                        <MessageCircle className="w-4 h-4 mr-1" />
-                        聊天
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setLocation(`/setup/${gf.id}`)}
-                      >
-                        <Edit className="w-4 h-4 mr-1" />
-                        编辑
-                      </Button>
+                      {/* 信息 */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-lg truncate">{gf.name}</h3>
+                          {gf.isActive && (
+                            <Badge variant="default" className="text-xs flex-shrink-0">
+                              当前
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-1">
+                          {gf.personality}
+                        </p>
+                        {/* 心情状态文字 */}
+                        {moodInfo && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className={`text-xs font-medium ${moodInfo.color}`}>
+                              {moodInfo.label}
+                            </span>
+                            {mood!.todayMessages > 0 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                · 今日聊了{mood!.todayMessages}条
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 操作按钮 */}
+                      <div className="flex flex-col gap-2 flex-shrink-0">
+                        <Button
+                          size="sm"
+                          onClick={() => handleStartChat(gf.id)}
+                        >
+                          <MessageCircle className="w-4 h-4 mr-1" />
+                          聊天
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setLocation(`/setup/${gf.id}`)}
+                        >
+                          <Edit className="w-4 h-4 mr-1" />
+                          编辑
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
 
@@ -341,67 +420,135 @@ export default function Home() {
         )}
       </div>
 
-      {/* 历史对话侧边栏 */}
-      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+      {/* 历史对话侧边栏（含搜索） */}
+      <Sheet open={historyOpen} onOpenChange={(open) => {
+        setHistoryOpen(open);
+        if (!open) {
+          setSearchKeyword("");
+          setDebouncedKeyword("");
+        }
+      }}>
         <SheetContent side="left" className="w-[320px] sm:max-w-[360px] p-0">
-          <SheetHeader className="p-4 border-b">
+          <SheetHeader className="p-4 pb-2 border-b">
             <SheetTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-primary" />
               历史对话
             </SheetTitle>
-            <SheetDescription>
-              点击快速切换到对应聊天
+            <SheetDescription className="sr-only">
+              搜索或浏览历史对话记录
             </SheetDescription>
+            {/* 搜索框 */}
+            <div className="relative mt-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                placeholder="搜索聊天记录..."
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                className="pl-9 pr-8 h-9"
+              />
+              {searchKeyword && (
+                <button
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setSearchKeyword("");
+                    setDebouncedKeyword("");
+                    searchInputRef.current?.focus();
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </SheetHeader>
 
-          <ScrollArea className="h-[calc(100vh-120px)]">
-            {!conversationsWithDetails || conversationsWithDetails.length === 0 ? (
+          <ScrollArea className="h-[calc(100vh-160px)]">
+            {/* 搜索加载状态 */}
+            {searchLoading && isSearchMode && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-primary mr-2" />
+                <span className="text-sm text-muted-foreground">搜索中...</span>
+              </div>
+            )}
+
+            {/* 搜索无结果 */}
+            {isSearchMode && !searchLoading && (!searchResults || searchResults.length === 0) && (
+              <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                <Search className="w-12 h-12 text-muted-foreground mb-3" />
+                <p className="text-sm text-muted-foreground">未找到包含 "{debouncedKeyword}" 的对话</p>
+                <p className="text-xs text-muted-foreground mt-1">试试其他关键词</p>
+              </div>
+            )}
+
+            {/* 无对话记录 */}
+            {!isSearchMode && (!conversationsWithDetails || conversationsWithDetails.length === 0) && (
               <div className="flex flex-col items-center justify-center py-16 text-center px-4">
                 <MessageCircle className="w-12 h-12 text-muted-foreground mb-3" />
                 <p className="text-sm text-muted-foreground">还没有对话记录</p>
                 <p className="text-xs text-muted-foreground mt-1">选择一位女友开始聊天吧</p>
               </div>
-            ) : (
-              <div className="divide-y">
-                {conversationsWithDetails.map((convo) => (
-                  <button
-                    key={convo.id}
-                    className="w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors flex items-center gap-3"
-                    onClick={() => {
-                      setHistoryOpen(false);
-                      setLocation(`/chat/${convo.id}`);
-                    }}
-                  >
-                    <Avatar className="w-10 h-10 flex-shrink-0">
-                      {convo.girlfriendImage ? (
-                        <AvatarImage src={convo.girlfriendImage} alt={convo.girlfriendName || ""} />
-                      ) : null}
-                      <AvatarFallback className="text-sm">
-                        {convo.girlfriendName?.[0] || "?"}
-                      </AvatarFallback>
-                    </Avatar>
+            )}
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-sm truncate">
-                          {convo.girlfriendName || convo.title || "对话"}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                          {convo.lastMessageAt
-                            ? formatTime(convo.lastMessageAt)
-                            : formatTime(convo.updatedAt)}
-                        </span>
+            {/* 对话列表 */}
+            {displayConversations && displayConversations.length > 0 && (
+              <div>
+                {isSearchMode && (
+                  <div className="px-4 py-2 bg-muted/30 border-b">
+                    <p className="text-xs text-muted-foreground">
+                      找到 {displayConversations.length} 个相关对话
+                    </p>
+                  </div>
+                )}
+                <div className="divide-y">
+                  {displayConversations.map((convo) => (
+                    <button
+                      key={convo.id}
+                      className="w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors flex items-center gap-3"
+                      onClick={() => {
+                        setHistoryOpen(false);
+                        setSearchKeyword("");
+                        setDebouncedKeyword("");
+                        setLocation(`/chat/${convo.id}`);
+                      }}
+                    >
+                      <Avatar className="w-10 h-10 flex-shrink-0">
+                        {convo.girlfriendImage ? (
+                          <AvatarImage src={convo.girlfriendImage} alt={convo.girlfriendName || ""} />
+                        ) : null}
+                        <AvatarFallback className="text-sm">
+                          {convo.girlfriendName?.[0] || "?"}
+                        </AvatarFallback>
+                      </Avatar>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-sm truncate">
+                            {convo.girlfriendName || convo.title || "对话"}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                            {convo.lastMessageAt
+                              ? formatTime(convo.lastMessageAt)
+                              : formatTime(convo.updatedAt)}
+                          </span>
+                        </div>
+                        {/* 搜索模式显示匹配的消息 */}
+                        {isSearchMode && (convo as any).matchedMessage ? (
+                          <p className="text-xs text-primary/80 truncate mt-0.5">
+                            🔍 {(convo as any).matchedMessage}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                            {convo.lastMessage
+                              ? convo.lastMessage === "[自拍照片]"
+                                ? "📷 发送了一张照片"
+                                : convo.lastMessage
+                              : "暂无消息"}
+                          </p>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">
-                        {convo.lastMessage
-                          ? convo.lastMessage === "[自拍照片]"
-                            ? "📷 发送了一张照片"
-                            : convo.lastMessage
-                          : "暂无消息"}
-                      </p>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </ScrollArea>

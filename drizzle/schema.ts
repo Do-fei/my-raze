@@ -118,3 +118,24 @@ export const apiConfigs = mysqlTable("apiConfigs", {
 
 export type ApiConfig = typeof apiConfigs.$inferSelect;
 export type InsertApiConfig = typeof apiConfigs.$inferInsert;
+
+/**
+ * Girlfriend mood tracking table
+ * Tracks mood changes based on chat content and frequency
+ */
+export const girlfriendMoods = mysqlTable("girlfriendMoods", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  girlfriendId: int("girlfriendId").notNull(),
+  mood: mysqlEnum("mood", ["excited", "happy", "content", "neutral", "lonely", "sad"]).default("happy").notNull(),
+  moodScore: int("moodScore").default(70).notNull(), // 0-100, higher = happier
+  lastChatAt: timestamp("lastChatAt"),
+  totalMessages: int("totalMessages").default(0).notNull(),
+  todayMessages: int("todayMessages").default(0).notNull(),
+  lastMoodUpdate: timestamp("lastMoodUpdate").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type GirlfriendMood = typeof girlfriendMoods.$inferSelect;
+export type InsertGirlfriendMood = typeof girlfriendMoods.$inferInsert;

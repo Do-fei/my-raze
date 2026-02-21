@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, like, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -8,6 +8,7 @@ import {
   messages,
   selfies,
   apiConfigs,
+  girlfriendMoods,
   type Girlfriend,
   type InsertGirlfriend,
   type Conversation,
@@ -18,6 +19,8 @@ import {
   type InsertSelfie,
   type ApiConfig,
   type InsertApiConfig,
+  type GirlfriendMood,
+  type InsertGirlfriendMood,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -441,6 +444,165 @@ export async function getConversationsWithLastMessage(userId: number): Promise<
   );
 
   return result;
+}
+
+// ============ Search Conversations ============
+
+export async function searchConversations(
+  userId: number,
+  keyword: string
+): Promise<
+  (Conversation & { lastMessage?: string; lastMessageAt?: Date; girlfriendName?: string; girlfriendImage?: string; matchedMessage?: string })[] 
+> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // 搜索包含关键词的消息
+  const matchedMsgs = await db
+    .select({
+      conversationId: messages.conversationId,
+      content: messages.content,
+      createdAt: messages.createdAt,
+    })
+    .from(messages)
+    .where(like(messages.content, `%${keyword}%`))
+    .orderBy(desc(messages.createdAt));
+
+  // 获取去重的对话 ID 列表（保持匹配顺序）
+  const seenConvoIds = new Set<number>();
+  const matchedConvoData: { conversationId: number; matchedMessage: string }[] = [];
+  for (const msg of matchedMsgs) {
+    if (!seenConvoIds.has(msg.conversationId)) {
+      seenConvoIds.add(msg.conversationId);
+      matchedConvoData.push({
+        conversationId: msg.conversationId,
+        matchedMessage: msg.content.length > 60 ? msg.content.substring(0, 60) + "..." : msg.content,
+      });
+    }
+  }
+
+  if (matchedConvoData.length === 0) return [];
+
+  // 获取对话详情
+  const result = await Promise.all(
+    matchedConvoData.map(async ({ conversationId, matchedMessage }) => {
+      const convoArr = await db
+        .select()
+        .from(conversations)
+        .where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)))
+        .limit(1);
+
+      if (convoArr.length === 0) return null;
+      const convo = convoArr[0];
+
+      // 获取最后一条消息
+      const lastMsgs = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.conversationId, convo.id))
+        .orderBy(desc(messages.createdAt))
+        .limit(1);
+
+      // 获取女友信息
+      const gfs = await db
+        .select({ name: girlfriends.name, referenceImageUrl: girlfriends.referenceImageUrl })
+        .from(girlfriends)
+        .where(eq(girlfriends.id, convo.girlfriendId))
+        .limit(1);
+
+      const lastMsg = lastMsgs[0];
+      const gf = gfs[0];
+
+      return {
+        ...convo,
+        lastMessage: lastMsg?.content || undefined,
+        lastMessageAt: lastMsg?.createdAt || undefined,
+        girlfriendName: gf?.name || undefined,
+        girlfriendImage: gf?.referenceImageUrl || undefined,
+        matchedMessage,
+      };
+    })
+  );
+
+  return result.filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
+// ============ Girlfriend Mood Functions ============
+
+export async function getGirlfriendMood(
+  userId: number,
+  girlfriendId: number
+): Promise<GirlfriendMood | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(girlfriendMoods)
+    .where(and(eq(girlfriendMoods.userId, userId), eq(girlfriendMoods.girlfriendId, girlfriendId)))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function upsertGirlfriendMood(
+  data: InsertGirlfriendMood
+): Promise<GirlfriendMood> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const existing = await db
+    .select()
+    .from(girlfriendMoods)
+    .where(
+      and(
+        eq(girlfriendMoods.userId, data.userId),
+        eq(girlfriendMoods.girlfriendId, data.girlfriendId)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    await db
+      .update(girlfriendMoods)
+      .set({
+        mood: data.mood,
+        moodScore: data.moodScore,
+        lastChatAt: data.lastChatAt,
+        totalMessages: data.totalMessages,
+        todayMessages: data.todayMessages,
+        lastMoodUpdate: new Date(),
+      })
+      .where(eq(girlfriendMoods.id, existing[0].id));
+
+    const updated = await db
+      .select()
+      .from(girlfriendMoods)
+      .where(eq(girlfriendMoods.id, existing[0].id))
+      .limit(1);
+    return updated[0]!;
+  } else {
+    const result = await db.insert(girlfriendMoods).values(data);
+    const insertedId = Number(result[0].insertId);
+    const inserted = await db
+      .select()
+      .from(girlfriendMoods)
+      .where(eq(girlfriendMoods.id, insertedId))
+      .limit(1);
+    return inserted[0]!;
+  }
+}
+
+export async function getAllGirlfriendMoods(
+  userId: number
+): Promise<GirlfriendMood[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(girlfriendMoods)
+    .where(eq(girlfriendMoods.userId, userId));
 }
 
 // ============ Create Default Girlfriend ============

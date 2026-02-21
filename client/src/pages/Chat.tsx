@@ -16,7 +16,7 @@ import {
   Moon,
   Camera,
 } from "lucide-react";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -174,6 +174,17 @@ export default function Chat() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: girlfriend } = trpc.girlfriend.getActive.useQuery();
+
+  // 心情系统
+  const girlfriendId = girlfriend?.id;
+  const stableGirlfriendId = useMemo(() => girlfriendId, [girlfriendId]);
+  const { data: moodData, refetch: refetchMood } = trpc.mood.get.useQuery(
+    { girlfriendId: stableGirlfriendId! },
+    { enabled: !!stableGirlfriendId }
+  );
+  const updateMood = trpc.mood.update.useMutation({
+    onSuccess: () => refetchMood(),
+  });
   const { data: chatMessages, refetch: refetchMessages } = trpc.conversation.getMessages.useQuery(
     { conversationId: currentConversationId! },
     { enabled: !!currentConversationId }
@@ -189,6 +200,23 @@ export default function Chat() {
   const sendMessage = trpc.chat.sendMessage.useMutation({
     onSuccess: async (data) => {
       await refetchMessages();
+
+      // 更新心情 - 用户消息
+      if (girlfriend) {
+        updateMood.mutate({
+          girlfriendId: girlfriend.id,
+          messageContent: message,
+          isUserMessage: true,
+        });
+        // 更新心情 - AI 回复
+        if (data.assistantMessage?.content) {
+          updateMood.mutate({
+            girlfriendId: girlfriend.id,
+            messageContent: data.assistantMessage.content,
+            isUserMessage: false,
+          });
+        }
+      }
 
       // 如果开启了自动语音播放，朗读 AI 回复
       if (autoPlay && data.assistantMessage?.content) {
@@ -296,6 +324,17 @@ export default function Chat() {
   // 语音引擎标签
   const ttsLabel = ttsProvider === "elevenlabs" ? "ElevenLabs" : ttsProvider === "fishaudio" ? "Fish" : "";
 
+  // 心情配置
+  const MOOD_CONFIG: Record<string, { emoji: string; label: string; color: string }> = {
+    excited: { emoji: "🥰", label: "超开心", color: "text-pink-500" },
+    happy: { emoji: "😊", label: "开心", color: "text-green-500" },
+    content: { emoji: "🙂", label: "满足", color: "text-blue-500" },
+    neutral: { emoji: "😐", label: "平静", color: "text-yellow-500" },
+    lonely: { emoji: "😢", label: "想你了", color: "text-purple-500" },
+    sad: { emoji: "😭", label: "伤心", color: "text-red-500" },
+  };
+  const currentMoodInfo = moodData ? MOOD_CONFIG[moodData.mood] : null;
+
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* 顶部导航栏 */}
@@ -310,9 +349,21 @@ export default function Chat() {
         </Avatar>
 
         <div className="flex-1">
-          <h1 className="font-semibold">{girlfriend.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-semibold">{girlfriend.name}</h1>
+            {currentMoodInfo && (
+              <span className="text-sm" title={`${currentMoodInfo.label} (${moodData!.moodScore}分)`}>
+                {currentMoodInfo.emoji}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
-            在线{ttsLabel ? ` · 语音: ${ttsLabel}` : ""}
+            {currentMoodInfo ? (
+              <span className={currentMoodInfo.color}>{currentMoodInfo.label}</span>
+            ) : (
+              "在线"
+            )}
+            {ttsLabel ? ` · 语音: ${ttsLabel}` : ""}
           </p>
         </div>
 
