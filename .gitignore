@@ -108,3 +108,13 @@ temp/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+
+# Manus logs
+.manus-logs/
+
+# Local design docs (not part of source)
+MyRaze_*.md
+screenshot_notes.md
+
+# Attached assets (uploaded separately)
+attached_assets/
