@@ -43,6 +43,13 @@
       "when": 1771672136655,
       "tag": "0005_strong_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1771673743722,
+      "tag": "0006_nifty_speed",
+      "breakpoints": true
     }
   ]
 }

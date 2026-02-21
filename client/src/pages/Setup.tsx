@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { Loader2, Upload, ArrowLeft, Trash2 } from "lucide-react";
+import { Loader2, Upload, ArrowLeft, Trash2, ChevronDown, ChevronUp, Eye, Brain } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
@@ -32,11 +32,17 @@ export default function Setup() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [showCustomPrompt, setShowCustomPrompt] = useState(false);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
 
   // 获取女友列表用于编辑
   const { data: girlfriends } = trpc.girlfriend.list.useQuery(undefined, {
     enabled: !!editId,
   });
+
+  // 获取全局提示词配置
+  const { data: apiConfig } = trpc.apiConfig.get.useQuery();
 
   // 编辑模式：加载已有数据
   useEffect(() => {
@@ -48,6 +54,8 @@ export default function Setup() {
         setAppearance(gf.appearance);
         setInterests(gf.interests || "");
         setExistingImageUrl(gf.referenceImageUrl);
+        setCustomPrompt(gf.customPrompt || "");
+        if (gf.customPrompt) setShowCustomPrompt(true);
       }
     }
   }, [editId, girlfriends]);
@@ -116,6 +124,7 @@ export default function Setup() {
         personality,
         appearance,
         interests: interests || undefined,
+        customPrompt: customPrompt || null,
       });
     } else {
       // 创建模式
@@ -276,6 +285,96 @@ export default function Setup() {
                   onChange={(e) => setInterests(e.target.value)}
                   rows={2}
                 />
+              </div>
+
+              {/* 高级提示词定制 */}
+              <div className="border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomPrompt(!showCustomPrompt)}
+                  className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
+                >
+                  {showCustomPrompt ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  <Brain className="w-4 h-4" />
+                  高级提示词定制
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-muted">可选</span>
+                </button>
+
+                {showCustomPrompt && (
+                  <div className="mt-3 space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="customPrompt">专属提示词</Label>
+                      <Textarea
+                        id="customPrompt"
+                        placeholder="例如：说话带点傲娇，偶尔用日语词汇，喜欢用“哼”开头..."
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        rows={3}
+                        maxLength={300}
+                        className="resize-none"
+                      />
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          仅对这个女友生效，会追加到全局提示词之后
+                        </p>
+                        <span className="text-xs text-muted-foreground">{customPrompt.length}/300</span>
+                      </div>
+                    </div>
+
+                    {/* 提示词预览 */}
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowPromptPreview(!showPromptPreview)}
+                        className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        {showPromptPreview ? "收起预览" : "查看最终生效的提示词"}
+                      </button>
+
+                      {showPromptPreview && (
+                        <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
+                          <p className="text-xs font-medium text-muted-foreground mb-2">最终发送给 AI 的提示词预览：</p>
+                          
+                          {/* 全局提示词 */}
+                          {apiConfig?.globalPrompt ? (
+                            <div className="rounded p-2 bg-blue-500/10 border border-blue-500/20">
+                              <span className="text-[10px] font-semibold text-blue-500 uppercase">全局提示词</span>
+                              <p className="mt-1 text-foreground/80">{apiConfig.globalPrompt}</p>
+                            </div>
+                          ) : (
+                            <div className="rounded p-2 bg-muted/50 border border-dashed">
+                              <span className="text-[10px] font-semibold text-muted-foreground uppercase">全局提示词</span>
+                              <p className="mt-1 text-muted-foreground italic">未设置，可在设置页配置</p>
+                            </div>
+                          )}
+
+                          {/* 个体提示词 */}
+                          {customPrompt ? (
+                            <div className="rounded p-2 bg-pink-500/10 border border-pink-500/20">
+                              <span className="text-[10px] font-semibold text-pink-500 uppercase">个体提示词</span>
+                              <p className="mt-1 text-foreground/80">{customPrompt}</p>
+                            </div>
+                          ) : (
+                            <div className="rounded p-2 bg-muted/50 border border-dashed">
+                              <span className="text-[10px] font-semibold text-muted-foreground uppercase">个体提示词</span>
+                              <p className="mt-1 text-muted-foreground italic">未设置</p>
+                            </div>
+                          )}
+
+                          {/* 性格 + 外貌结构化字段 */}
+                          <div className="rounded p-2 bg-purple-500/10 border border-purple-500/20">
+                            <span className="text-[10px] font-semibold text-purple-500 uppercase">角色设定</span>
+                            <p className="mt-1 text-foreground/80">
+                              性格：{personality || "未填写"} | 外貌：{appearance || "未填写"}
+                              {interests && ` | 兴趣：${interests}`}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <Button type="submit" className="w-full" disabled={isPending}>

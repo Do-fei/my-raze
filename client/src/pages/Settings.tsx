@@ -6,8 +6,9 @@ import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import {
   ArrowLeft, Loader2, Save, Volume2, Sun, Moon, Search, Check,
-  ExternalLink, Zap, Mic, Music, Globe,
+  ExternalLink, Zap, Mic, Music, Globe, Brain, ChevronDown, ChevronUp, Sparkles, Eye,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -70,6 +71,22 @@ export default function Settings() {
   const [showFishAudioModels, setShowFishAudioModels] = useState(false);
   const [fishAudioSearch, setFishAudioSearch] = useState("");
 
+  // 全局提示词 states
+  const [globalPrompt, setGlobalPrompt] = useState("");
+  const [replyLanguage, setReplyLanguage] = useState("");
+  const [replyLengthLimit, setReplyLengthLimit] = useState("");
+  const [showAdvancedPrompt, setShowAdvancedPrompt] = useState(false);
+
+  // 快捷模板
+  const promptTemplates = [
+    { label: "🏠 日常陪伴", text: "回复要温柔体贴，多关心对方的日常生活，适当使用可爱的表情和语气词，像真实的女友一样聊天。" },
+    { label: "🎭 角色扮演", text: "始终保持角色设定，不要跳出角色。回复时融入角色的性格特点和语言习惯，让对话更有沉浸感。" },
+    { label: "✨ 简短回复", text: "回复要简洁，每次不超过 2-3 句话。用口语化的表达，像微信聊天一样自然。" },
+    { label: "💬 深度对话", text: "可以进行深入的话题讨论，分享观点和想法，回复可以稍长一些，展现思考深度和情感共鸣。" },
+    { label: "🌟 活泼搞怪", text: "回复要充满活力和幽默感，经常开玩笑、吐槽、撩人，语气俏皮可爱，让人忍不住笑。" },
+    { label: "🌿 治愈系", text: "回复要温暖治愈，充满关怀和鼓励。当对方不开心时要特别温柔，像一个安全温暖的港湾。" },
+  ];
+
   // 加载已有配置
   const { data: apiConfig, isLoading } = trpc.apiConfig.get.useQuery();
 
@@ -119,6 +136,9 @@ export default function Settings() {
       setFishAudioApiKey(apiConfig.fishAudioApiKey || "");
       setFishAudioModelId(apiConfig.fishAudioModelId || "");
       setFishAudioModelName(apiConfig.fishAudioModelName || "");
+      setGlobalPrompt(apiConfig.globalPrompt || "");
+      setReplyLanguage(apiConfig.replyLanguage || "");
+      setReplyLengthLimit(apiConfig.replyLengthLimit || "");
     }
   }, [apiConfig]);
 
@@ -191,6 +211,9 @@ export default function Settings() {
       fishAudioApiKey: fishAudioApiKey || undefined,
       fishAudioModelId: fishAudioModelId || undefined,
       fishAudioModelName: fishAudioModelName || undefined,
+      globalPrompt: globalPrompt || null,
+      replyLanguage: replyLanguage || null,
+      replyLengthLimit: replyLengthLimit || null,
     });
   };
 
@@ -897,6 +920,101 @@ export default function Settings() {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* ========== AI 行为设定 ========== */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-primary" />
+                  AI 行为设定
+                </CardTitle>
+                <CardDescription>
+                  设置所有女友共享的基础行为规范，如回复风格、语气偏好等
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* 全局默认提示词 */}
+                <div className="space-y-2">
+                  <Label htmlFor="globalPrompt">全局默认提示词</Label>
+                  <Textarea
+                    id="globalPrompt"
+                    placeholder="例如：回复要简短可爱，多用表情，不要说教..."
+                    value={globalPrompt}
+                    onChange={(e) => setGlobalPrompt(e.target.value)}
+                    rows={4}
+                    maxLength={500}
+                    className="resize-none"
+                  />
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      此提示词将应用于所有女友的对话中
+                    </p>
+                    <span className="text-xs text-muted-foreground">{globalPrompt.length}/500</span>
+                  </div>
+                </div>
+
+                {/* 快捷模板 */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    快捷模板
+                  </Label>
+                  <p className="text-xs text-muted-foreground">点击即可快速填充提示词，也可以在此基础上修改</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {promptTemplates.map((tpl) => (
+                      <button
+                        key={tpl.label}
+                        onClick={() => {
+                          setGlobalPrompt(tpl.text);
+                          toast.success(`已应用模板：${tpl.label}`);
+                        }}
+                        className={`text-left p-2.5 rounded-lg border text-sm transition-all hover:border-primary/40 hover:bg-primary/5 ${
+                          globalPrompt === tpl.text ? "border-primary bg-primary/10" : "border-border"
+                        }`}
+                      >
+                        <span className="font-medium">{tpl.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 高级选项 */}
+                <div className="border-t pt-4">
+                  <button
+                    onClick={() => setShowAdvancedPrompt(!showAdvancedPrompt)}
+                    className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
+                  >
+                    {showAdvancedPrompt ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    高级选项
+                  </button>
+
+                  {showAdvancedPrompt && (
+                    <div className="mt-3 space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="replyLanguage">回复语言</Label>
+                        <Input
+                          id="replyLanguage"
+                          placeholder="默认中文，可设置为英文、日文等"
+                          value={replyLanguage}
+                          onChange={(e) => setReplyLanguage(e.target.value)}
+                          maxLength={50}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="replyLengthLimit">回复长度限制</Label>
+                        <Input
+                          id="replyLengthLimit"
+                          placeholder="例如：50字以内、2-3句话、不限制"
+                          value={replyLengthLimit}
+                          onChange={(e) => setReplyLengthLimit(e.target.value)}
+                          maxLength={50}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
 

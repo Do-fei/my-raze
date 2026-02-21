@@ -31,6 +31,7 @@ export const girlfriends = mysqlTable("girlfriends", {
   interests: text("interests"), // 兴趣爱好
   referenceImageUrl: text("referenceImageUrl").notNull(), // S3 上的参考图片 URL
   referenceImageKey: varchar("referenceImageKey", { length: 500 }).notNull(), // S3 文件 key
+  customPrompt: text("customPrompt"), // 个体定制提示词，追加在全局提示词之后
   isActive: boolean("isActive").default(true).notNull(), // 是否为当前激活的女友
   deletedAt: timestamp("deletedAt"), // 软删除时间，null 表示未删除，有值表示已删除（7天后可永久清除）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -113,6 +114,10 @@ export const apiConfigs = mysqlTable("apiConfigs", {
   fishAudioApiKey: varchar("fishAudioApiKey", { length: 200 }), // Fish Audio API Key
   fishAudioModelId: varchar("fishAudioModelId", { length: 200 }), // Fish Audio 选择的声音模型 ID
   fishAudioModelName: varchar("fishAudioModelName", { length: 200 }), // Fish Audio 声音模型名称
+  // 全局提示词配置
+  globalPrompt: text("globalPrompt"), // 全局默认提示词，所有女友共享
+  replyLanguage: varchar("replyLanguage", { length: 50 }).default("中文"), // 回复语言
+  replyLengthLimit: varchar("replyLengthLimit", { length: 50 }).default("50-100字"), // 回复长度限制
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

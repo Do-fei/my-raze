@@ -116,3 +116,12 @@
 - [x] 退出登录按钮：首页顶栏增加退出登录功能，退出后回到欢迎页
 - [x] 默认深色模式：ThemeProvider 默认主题改为 dark
 - [x] 修复 bug：createDefaultGirlfriend 现在只检查未删除的女友，避免重复创建
+
+## v2.0 提示词分层方案
+- [x] 数据库：api_configs 表新增 globalPrompt / replyLanguage / replyLengthLimit 字段
+- [x] 数据库：girlfriends 表新增 customPrompt 字段
+- [x] 后端：全局提示词 CRUD API（读取/保存）
+- [x] 后端：对话系统集成分层提示词拼接逻辑
+- [x] 前端 Settings：新增“AI 行为设定”卡片（全局提示词 + 6个快捷模板 + 高级选项）
+- [x] 前端 Setup：新增可折叠“高级提示词定制”区域 + 分层提示词预览面板
+- [x] 单元测试：71 个测试全部通过
