@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663213781898/ovIQZzKPGxczbcAQ.png" alt="My Raze Logo" width="200" />
+
 # My Raze ✨
 
 **你的 AI 虚拟女友 · 智能对话 · 场景自拍 · 语音互动**
