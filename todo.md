@@ -177,3 +177,10 @@
 - [x] 后端：新增用量查询 tRPC 过程
 - [x] 前端：API 用量监控卡片 UI（余额、用量统计、进度条可视化）
 - [x] 测试：用量查询 API 测试（98 个测试全部通过）
+
+## v2.8 语音消息输入功能
+- [x] 后端：新增 voice.transcribe tRPC 过程（Base64 → S3 → Whisper 转写）
+- [x] 前端：创建 useVoiceRecorder Hook（录音、计时、取消）
+- [x] 前端：创建 VoiceRecordButton 组件（按住说话、波形动画、上滑取消）
+- [x] 前端：Chat.tsx 集成语音/文字模式切换
+- [x] 测试：voice.transcribe API 测试（7 个测试全部通过）

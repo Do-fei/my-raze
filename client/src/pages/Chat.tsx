@@ -15,7 +15,11 @@ import {
   Sun,
   Moon,
   Camera,
+  Mic,
+  Keyboard,
 } from "lucide-react";
+import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
+import { VoiceRecordButton } from "@/components/VoiceRecordButton";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
@@ -167,11 +171,28 @@ export default function Chat() {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
   const [message, setMessage] = useState("");
+  const [inputMode, setInputMode] = useState<"text" | "voice">(() => {
+    return (localStorage.getItem("chat-input-mode") as "text" | "voice") || "text";
+  });
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(
     conversationId
   );
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 语音录制
+  const {
+    isRecording, isTranscribing, setIsTranscribing,
+    duration, isSupported: voiceSupported,
+    startRecording, stopRecording, cancelRecording, setOnMaxDuration,
+  } = useVoiceRecorder();
+  const transcribeMutation = trpc.voice.transcribe.useMutation();
+  const recordingDurationRef = useRef(0);
+
+  // 同步录音时长到 ref
+  useEffect(() => {
+    recordingDurationRef.current = duration;
+  }, [duration]);
 
   const { data: girlfriend } = trpc.girlfriend.getActive.useQuery();
 
@@ -309,6 +330,71 @@ export default function Chat() {
       userContext: message.trim() || "a casual selfie, looking cute and happy",
     });
   };
+
+  // 语音/文字模式切换
+  const switchInputMode = useCallback((mode: "text" | "voice") => {
+    setInputMode(mode);
+    localStorage.setItem("chat-input-mode", mode);
+  }, []);
+
+  // 处理录音完成
+  const handleRecordingComplete = useCallback(async () => {
+    const currentDuration = recordingDurationRef.current;
+    const result = await stopRecording();
+    if (!result || !currentConversationId) return;
+
+    // 最短录音时长检查
+    if (currentDuration < 1) {
+      toast.info("录音时间太短，请重试");
+      return;
+    }
+
+    setIsTranscribing(true);
+
+    // Blob → Base64
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      if (!base64) {
+        setIsTranscribing(false);
+        toast.error("音频数据读取失败");
+        return;
+      }
+
+      transcribeMutation.mutate(
+        { audioBase64: base64, mimeType: result.mimeType },
+        {
+          onSuccess: (data) => {
+            setIsTranscribing(false);
+            if (data.text) {
+              // 自动发送转写文字
+              sendMessage.mutate({
+                conversationId: currentConversationId!,
+                content: data.text,
+              });
+              toast.success(`语音识别成功（${data.duration?.toFixed(1) || 0}秒）`);
+            } else {
+              toast.error("未识别到有效语音内容，请重试");
+            }
+          },
+          onError: (error) => {
+            setIsTranscribing(false);
+            toast.error(`语音识别失败：${error.message}`);
+          },
+        }
+      );
+    };
+    reader.onerror = () => {
+      setIsTranscribing(false);
+      toast.error("音频数据读取失败");
+    };
+    reader.readAsDataURL(result.blob);
+  }, [stopRecording, currentConversationId, setIsTranscribing, transcribeMutation, sendMessage]);
+
+  // 注册最大时长回调
+  useEffect(() => {
+    setOnMaxDuration(() => handleRecordingComplete);
+  }, [setOnMaxDuration, handleRecordingComplete]);
 
   if (!girlfriend) {
     return (
@@ -532,12 +618,13 @@ export default function Chat() {
 
       {/* 输入框 */}
       <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-2 sm:p-4 border-t bg-card" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+        {/* 拍照按钮 */}
         <Button
           type="button"
           variant="ghost"
           size="icon"
           onClick={handleManualSelfie}
-          disabled={sendMessage.isPending || generateSelfie.isPending}
+          disabled={sendMessage.isPending || generateSelfie.isPending || isRecording || isTranscribing}
           title="让她拍一张自拍"
           className="shrink-0 text-primary hover:text-primary hover:bg-primary/10"
         >
@@ -547,25 +634,72 @@ export default function Chat() {
             <Camera className="w-5 h-5" />
           )}
         </Button>
-        <Input
-          ref={inputRef}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder={`和 ${girlfriend.name} 说点什么...`}
-          disabled={sendMessage.isPending || generateSelfie.isPending}
-          className="flex-1"
-        />
-        <Button
-          type="submit"
-          size="icon"
-          disabled={!message.trim() || sendMessage.isPending || generateSelfie.isPending}
-        >
-          {sendMessage.isPending ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <Send className="w-5 h-5" />
-          )}
-        </Button>
+
+        {inputMode === "text" ? (
+          <>
+            {/* 文字输入模式 */}
+            <Input
+              ref={inputRef}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder={`和 ${girlfriend.name} 说点什么...`}
+              disabled={sendMessage.isPending || generateSelfie.isPending}
+              className="flex-1"
+            />
+            {/* 语音切换按钮（输入框为空且浏览器支持时显示） */}
+            {voiceSupported && !message.trim() ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => switchInputMode("voice")}
+                disabled={sendMessage.isPending || generateSelfie.isPending}
+                title="切换到语音输入"
+                className="shrink-0 text-muted-foreground hover:text-primary"
+              >
+                <Mic className="w-5 h-5" />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                size="icon"
+                disabled={!message.trim() || sendMessage.isPending || generateSelfie.isPending}
+                className="shrink-0"
+              >
+                {sendMessage.isPending ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+              </Button>
+            )}
+          </>
+        ) : (
+          <>
+            {/* 语音输入模式 */}
+            <VoiceRecordButton
+              isRecording={isRecording}
+              isTranscribing={isTranscribing}
+              duration={duration}
+              onStart={startRecording}
+              onEnd={handleRecordingComplete}
+              onCancel={cancelRecording}
+              disabled={sendMessage.isPending || generateSelfie.isPending}
+            />
+            {/* 键盘切换按钮 */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => switchInputMode("text")}
+              disabled={isRecording || isTranscribing}
+              title="切换到文字输入"
+              className="shrink-0 text-muted-foreground hover:text-primary"
+            >
+              <Keyboard className="w-5 h-5" />
+            </Button>
+          </>
+        )}
       </form>
     </div>
   );

@@ -2,6 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   createGirlfriend,
@@ -44,6 +45,7 @@ import { nanoid } from "nanoid";
 import { invokeLLM } from "./_core/llm";
 import { buildSmartPrompt } from "./promptTemplates";
 import axios from "axios";
+import { transcribeAudio } from "./_core/voiceTranscription";
 
 // 判断是否应该生成自拍的辅助函数
 function shouldGenerateSelfieFromText(aiResponse: string, userMessage: string): boolean {
@@ -986,6 +988,67 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         }
       }),
   }),
-});
 
+  // ========== 语音转写 ==========
+  voice: router({
+    transcribe: protectedProcedure
+      .input(
+        z.object({
+          audioBase64: z.string().min(1, "音频数据不能为空"),
+          mimeType: z.string().default("audio/webm"),
+          language: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        // 1. Base64 解码
+        const audioBuffer = Buffer.from(input.audioBase64, "base64");
+
+        // 2. 文件大小校验（16MB 限制）
+        const sizeMB = audioBuffer.length / (1024 * 1024);
+        if (sizeMB > 16) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `音频文件过大（${sizeMB.toFixed(1)}MB），最大支持 16MB`,
+          });
+        }
+
+        // 3. 上传到 S3
+        const ext = input.mimeType.includes("webm")
+          ? "webm"
+          : input.mimeType.includes("mp4")
+          ? "m4a"
+          : input.mimeType.includes("ogg")
+          ? "ogg"
+          : "audio";
+        const fileKey = `voice-messages/${ctx.user.id}/${Date.now()}-${nanoid(8)}.${ext}`;
+        const { url: audioUrl } = await storagePut(
+          fileKey,
+          audioBuffer,
+          input.mimeType
+        );
+
+        // 4. 调用 Whisper 转写
+        const result = await transcribeAudio({
+          audioUrl,
+          language: input.language,
+          prompt: "这是一段与 AI 女友的日常对话语音消息",
+        });
+
+        // 5. 错误处理
+        if ("error" in result) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: (result as any).error,
+          });
+        }
+
+        // 6. 返回转写结果
+        return {
+          text: (result as any).text?.trim() || "",
+          language: (result as any).language || "unknown",
+          duration: (result as any).duration || 0,
+        };
+      }),
+  }),
+});
 export type AppRouter = typeof appRouter;
