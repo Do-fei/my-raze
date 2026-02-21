@@ -18,6 +18,7 @@ import {
   Clock,
   Search,
   X,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useLocation } from "wouter";
@@ -33,6 +34,16 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // 心情配置
 const MOOD_CONFIG: Record<string, { emoji: string; label: string; color: string; bgColor: string }> = {
@@ -53,6 +64,7 @@ export default function Home() {
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const defaultCreatedRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
 
   const { data: girlfriends, isLoading: girlfriendsLoading, refetch } = trpc.girlfriend.list.useQuery(
     undefined,
@@ -110,6 +122,17 @@ export default function Home() {
       ensureDefault.mutate();
     }
   }, [isAuthenticated, girlfriends]);
+
+  const deleteGirlfriend = trpc.girlfriend.delete.useMutation({
+    onSuccess: () => {
+      refetch();
+      setDeleteTarget(null);
+      toast.success("已删除");
+    },
+    onError: (error) => {
+      toast.error(`删除失败：${error.message}`);
+    },
+  });
 
   const updateGirlfriend = trpc.girlfriend.update.useMutation({
     onSuccess: () => {
@@ -363,6 +386,15 @@ export default function Home() {
                           <Edit className="w-4 h-4 mr-1" />
                           编辑
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+                          onClick={() => setDeleteTarget({ id: gf.id, name: gf.name })}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          删除
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -554,6 +586,32 @@ export default function Home() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      {/* 删除确认弹窗 */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              你确定要删除 <span className="font-semibold text-foreground">{deleteTarget?.name}</span> 吗？删除后将清除她的所有聊天记录和自拍照片，此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteGirlfriend.mutate({ id: deleteTarget.id })}
+              disabled={deleteGirlfriend.isPending}
+            >
+              {deleteGirlfriend.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-1 animate-spin" />删除中...</>
+              ) : (
+                "确认删除"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
