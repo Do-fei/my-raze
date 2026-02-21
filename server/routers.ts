@@ -663,6 +663,82 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           throw new Error("获取模型列表失败，请稍后重试");
         }
       }),
+
+    // 查询 OpenRouter 余额
+    fetchOpenRouterCredits: protectedProcedure
+      .input(z.object({ apiKey: z.string().min(1) }))
+      .query(async ({ input }) => {
+        try {
+          const response = await axios.get("https://openrouter.ai/api/v1/credits", {
+            headers: {
+              Authorization: `Bearer ${input.apiKey}`,
+            },
+          });
+          const data = response.data.data;
+          return {
+            totalCredits: data.total_credits || 0,
+            totalUsage: data.total_usage || 0,
+            remaining: (data.total_credits || 0) - (data.total_usage || 0),
+          };
+        } catch (error: any) {
+          console.error("[OpenRouter] Failed to fetch credits:", error?.response?.status);
+          if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error("无法查询余额，API Key 可能不支持余额查询");
+          }
+          throw new Error("查询 OpenRouter 余额失败");
+        }
+      }),
+
+    // 查询 ElevenLabs 订阅信息
+    fetchElevenLabsUsage: protectedProcedure
+      .input(z.object({ apiKey: z.string().min(1) }))
+      .query(async ({ input }) => {
+        try {
+          const response = await axios.get("https://api.elevenlabs.io/v1/user/subscription", {
+            headers: {
+              "xi-api-key": input.apiKey,
+            },
+          });
+          const data = response.data;
+          return {
+            tier: data.tier || "free",
+            characterCount: data.character_count || 0,
+            characterLimit: data.character_limit || 0,
+            remaining: (data.character_limit || 0) - (data.character_count || 0),
+            status: data.status || "unknown",
+          };
+        } catch (error: any) {
+          console.error("[ElevenLabs] Failed to fetch usage:", error?.response?.status);
+          if (error?.response?.status === 401) {
+            throw new Error("API Key 无效，无法查询用量");
+          }
+          throw new Error("查询 ElevenLabs 用量失败");
+        }
+      }),
+
+    // 查询 Fish Audio 余额
+    fetchFishAudioCredits: protectedProcedure
+      .input(z.object({ apiKey: z.string().min(1) }))
+      .query(async ({ input }) => {
+        try {
+          const response = await axios.get("https://api.fish.audio/wallet/self/api-credit", {
+            headers: {
+              Authorization: `Bearer ${input.apiKey}`,
+            },
+          });
+          const data = response.data;
+          return {
+            credit: parseFloat(data.credit) || 0,
+            hasFreeCredit: data.has_free_credit || false,
+          };
+        } catch (error: any) {
+          console.error("[FishAudio] Failed to fetch credits:", error?.response?.status);
+          if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error("API Key 无效，无法查询余额");
+          }
+          throw new Error("查询 Fish Audio 余额失败");
+        }
+      }),
   }),
 
   // ============ Mood System ============

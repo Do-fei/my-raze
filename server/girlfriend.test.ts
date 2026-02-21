@@ -67,7 +67,10 @@ describe("girlfriend.create", () => {
 
 describe("girlfriend.getActive", () => {
   it("should return active girlfriend for authenticated user", async () => {
+    // 使用唯一用户 ID 避免数据污染
     const { ctx } = createAuthContext();
+    ctx.user!.id = 88888;
+    ctx.user!.openId = "test-getactive-user";
     const caller = appRouter.createCaller(ctx);
 
     // 先创建一个女友

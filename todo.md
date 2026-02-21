@@ -171,3 +171,9 @@
 - [x] AI 行为设定卡片添加独立"保存生效"按钮
 - [x] API Key 有效性即时验证（绿色/红色状态标识）：OpenRouter、ElevenLabs、Fish Audio、fal.ai
 - [x] OpenRouter 模型收藏/常用列表（localStorage 存储，收藏模型置顶显示）85 个测试全部通过）
+
+## v2.7 API 使用量监控
+- [x] 调研各平台用量查询 API（OpenRouter、fal.ai、ElevenLabs、Fish Audio）
+- [x] 后端：新增用量查询 tRPC 过程
+- [x] 前端：API 用量监控卡片 UI（余额、用量统计、进度条可视化）
+- [x] 测试：用量查询 API 测试（98 个测试全部通过）
