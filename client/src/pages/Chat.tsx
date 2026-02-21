@@ -14,6 +14,7 @@ import {
   VolumeX,
   Sun,
   Moon,
+  Camera,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useLocation, useParams } from "wouter";
@@ -198,6 +199,15 @@ export default function Chat() {
     }
   };
 
+  const handleManualSelfie = () => {
+    if (!currentConversationId) return;
+    toast.info("正在生成自拍照片...");
+    generateSelfie.mutate({
+      conversationId: currentConversationId,
+      userContext: message.trim() || "a casual selfie, looking cute and happy",
+    });
+  };
+
   if (!girlfriend) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-background">
@@ -355,6 +365,21 @@ export default function Chat() {
 
       {/* 输入框 */}
       <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-4 border-t bg-card">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={handleManualSelfie}
+          disabled={sendMessage.isPending || generateSelfie.isPending}
+          title="让她拍一张自拍"
+          className="shrink-0 text-primary hover:text-primary hover:bg-primary/10"
+        >
+          {generateSelfie.isPending ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <Camera className="w-5 h-5" />
+          )}
+        </Button>
         <Input
           ref={inputRef}
           value={message}
@@ -368,7 +393,7 @@ export default function Chat() {
           size="icon"
           disabled={!message.trim() || sendMessage.isPending || generateSelfie.isPending}
         >
-          {sendMessage.isPending || generateSelfie.isPending ? (
+          {sendMessage.isPending ? (
             <Loader2 className="w-5 h-5 animate-spin" />
           ) : (
             <Send className="w-5 h-5" />
