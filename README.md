@@ -20,13 +20,25 @@
 
 > ## 🚧 重构进行中 · DO NOT DEPLOY
 >
-> 当前 `main` 分支属于 **v3.0 MVP**，正在进行通往生产可用版本的重构。
-> 在 Phase 1（安全加固）合并之前，**请勿将本仓库部署到任何公网环境** —— 已知存在
-> 用户 API 密钥明文存储、无服务端限流、跨用户数据写入等若干 critical 级别问题，
-> 任何被运营方或用户支付的第三方调用额度都可能被滥用。
+> 当前 `main` 分支属于 **v3.0 MVP**，正在向生产可用版本重构。
+> **Phase 1（安全加固）合并完成之前，请勿将本仓库部署到任何公网环境。**
 >
-> 完整重构计划见 [`docs/REFACTORING.md`](docs/REFACTORING.md)；问题清单见
-> [`docs/issues-to-file.md`](docs/issues-to-file.md)；重大决策见 [`docs/adr/`](docs/adr/)。
+> 已知未修复的高危漏洞（按 issue 追踪，逐项关闭）：
+>
+> | 状态 | Issue | 漏洞 |
+> | --- | --- | --- |
+> | ✅ 已修 | [#6](https://github.com/Do-fei/my-raze/issues/6)  | `JWT_SECRET` 默认空导致任意会话伪造 |
+> | ✅ 已修 | [#11](https://github.com/Do-fei/my-raze/issues/11) | 日志泄露 API key / 用户 PII |
+> | ✅ 已修 | [#4](https://github.com/Do-fei/my-raze/issues/4)  | 跨用户写入对话消息 / 自拍 |
+> | ⏳ 修复中 | [#8](https://github.com/Do-fei/my-raze/issues/8)  | tRPC mutation 无 CSRF 保护 |
+> | ⏳ 修复中 | [#9](https://github.com/Do-fei/my-raze/issues/9)  | LLM 输出未消毒 → 存储型 XSS |
+> | ⏳ Phase 1b | [#7](https://github.com/Do-fei/my-raze/issues/7)  | OAuth state 无 HMAC（随 OAuth 整体替换一起修） |
+> | ⏳ Phase 1b | [#2](https://github.com/Do-fei/my-raze/issues/2), [#3](https://github.com/Do-fei/my-raze/issues/3) | 用户 API key 明文存储 + tRPC 路由裸传 |
+> | ⏳ Phase 1c | [#5](https://github.com/Do-fei/my-raze/issues/5), [#10](https://github.com/Do-fei/my-raze/issues/10) | 无服务端限流 + 无订阅配额（运营成本可被刷爆） |
+>
+> 完整重构计划见 [`docs/REFACTORING.md`](docs/REFACTORING.md)；
+> 全部 issue 见 [issue tracker](https://github.com/Do-fei/my-raze/issues)；
+> 重大决策见 [`docs/adr/`](docs/adr/)。
 
 ---
 
