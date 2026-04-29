@@ -26,6 +26,7 @@ import {
   type InsertNotification,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { log } from "./_core/log";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -97,7 +98,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       set: updateSet,
     });
   } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
+    log.error("[Database] Failed to upsert user", error);
     throw error;
   }
 }
