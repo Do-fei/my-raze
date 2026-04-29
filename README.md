@@ -286,6 +286,6 @@ pnpm test
 
 <div align="center">
 
-**Built with Manus AI & Love**
+**Built with Dawei & Love**
 
 </div>
