@@ -1,15 +1,18 @@
-# Issues to file from the v3.0 → production diagnosis
+# Issues filed from the v3.0 → production diagnosis
 
-This is a **review-and-batch-create** ticket file. Each entry is a draft of a
-GitHub issue. Once the owner approves wording, run the helper at the bottom
-of this file (or open them via `gh issue create` manually) to publish them
-under https://github.com/Do-fei/my-raze/issues with the labels noted.
+> **Status:** ✅ All issues have been published as **#2 through #41** in the
+> repository's issue tracker. This document is preserved as the genesis
+> record (so a clone alone is enough to reproduce the publishing step) and
+> as the canonical wording. **Edit issues on GitHub, not this file.**
 
 Phase labels (`phase-1`..`phase-6`) are added so we can filter by phase. The
 severity labels are: `critical` (blocks Phase 1 / production), `high`,
 `medium`, `low`.
 
-Total: 30 issues. (5 critical, 9 high, 11 medium, 5 low.)
+**Total: 40 issues.** Severity breakdown: 5 critical, 13 high, 17 medium,
+2 low. (The original PR description said "30" — that was an underestimate
+from the diagnosis pass; the actual itemized backlog came out to 40 once
+each finding was scoped to a single owner-actionable ticket.)
 
 ---
 

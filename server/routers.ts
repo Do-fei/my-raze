@@ -395,23 +395,33 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        // 1. 保存用户消息
+        // 1. 验证对话所有权（必须在写入前完成 — 见 issue #4）
+        // 之前的实现顺序是 createMessage → getConversation，这意味着任何登录用户
+        // 传一个别人的 conversationId 也能成功 INSERT 一条 user message 进对方对话。
+        const conversation = await getConversation(input.conversationId, ctx.user.id);
+        if (!conversation) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Conversation not found or not owned by current user",
+          });
+        }
+
+        const girlfriend = await getActiveGirlfriend(ctx.user.id);
+        if (!girlfriend) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "No active girlfriend found",
+          });
+        }
+
+        // 2. 保存用户消息（所有权已校验）
+        // TODO(phase-2 / issue #17): 把 user msg + assistant msg 包进同一个事务，
+        // 避免 LLM 调用失败时留下半截对话。
         const userMessage = await createMessage({
           conversationId: input.conversationId,
           role: "user",
           content: input.content,
         });
-
-        // 2. 获取对话上下文
-        const conversation = await getConversation(input.conversationId, ctx.user.id);
-        if (!conversation) {
-          throw new Error("Conversation not found");
-        }
-
-        const girlfriend = await getActiveGirlfriend(ctx.user.id);
-        if (!girlfriend) {
-          throw new Error("No active girlfriend found");
-        }
 
         // 3. 获取最近的消息历史（用于上下文）
         const recentMessages = await getRecentMessages(input.conversationId, 10);
@@ -524,16 +534,33 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         })
       )
       .mutation(async ({ ctx, input }) => {
+        // 0. 验证对话所有权 — 见 issue #4。selfie.generate 此前会无条件
+        // INSERT 一条 assistant message 到 input.conversationId，攻击者可借此
+        // 把"自拍消息"写进任意对话。
+        const conversation = await getConversation(input.conversationId, ctx.user.id);
+        if (!conversation) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Conversation not found or not owned by current user",
+          });
+        }
+
         // 1. 获取女友配置
         const girlfriend = await getActiveGirlfriend(ctx.user.id);
         if (!girlfriend) {
-          throw new Error("No active girlfriend found");
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "No active girlfriend found",
+          });
         }
 
         // 2. 获取 API 配置
         const apiConfig = await getUserApiConfig(ctx.user.id);
         if (!apiConfig?.falApiKey) {
-          throw new Error("fal.ai API key not configured");
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "fal.ai API key not configured",
+          });
         }
 
         // 3. 使用 Clawra 提示词模板生成提示词
