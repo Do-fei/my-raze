@@ -51,10 +51,14 @@ describe("auth.logout", () => {
     expect(result).toEqual({ success: true });
     expect(clearedCookies).toHaveLength(1);
     expect(clearedCookies[0]?.name).toBe(COOKIE_NAME);
+    // Phase 1a-ii (issue #8) changed the session cookie's sameSite from
+    // "none" to "lax" as part of CSRF hardening. Logout's clearCookie
+    // call must use the same options, otherwise browsers won't recognize
+    // the clear and the cookie lingers.
     expect(clearedCookies[0]?.options).toMatchObject({
       maxAge: -1,
       secure: true,
-      sameSite: "none",
+      sameSite: "lax",
       httpOnly: true,
       path: "/",
     });
