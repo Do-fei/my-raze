@@ -41,8 +41,6 @@ function loadEnv() {
   }
 
   // --- Required outside test: KEY_ENCRYPTION_KEY (Phase 1b-i / issue #2) ---
-  // Master secret for encrypting per-user BYOK API keys. Same generation
-  // recipe as JWT_SECRET; the two MUST be different values in production.
   if ((env.NODE_ENV ?? "development") !== "test") {
     if (!env.KEY_ENCRYPTION_KEY) {
       issues.push(
@@ -68,10 +66,6 @@ function loadEnv() {
   }
 
   // --- DATABASE_URL: required in dev/prod; relaxed in test ---
-  // Test mode preserves the v3.0 silent-no-op behavior of `db.ts` so the
-  // pre-existing test suite (which never set DATABASE_URL and passed by
-  // accident — see diagnosis) keeps working until Phase 4 moves it to
-  // testcontainers. Outside `NODE_ENV=test` we fail fast.
   if (nodeEnv !== "test") {
     if (env.DATABASE_URL === undefined) {
       issues.push("DATABASE_URL: DATABASE_URL is required (set in .env).");
@@ -80,16 +74,38 @@ function loadEnv() {
     }
   }
 
+  // --- Email delivery (Phase 1b-ii.1 / ADR 0006) ---
+  // Production requires EMAIL_FROM and at least one driver configured.
+  // Dev/test can fall back to StdoutDriver (no env needed).
+  if (nodeEnv === "production") {
+    if (!env.EMAIL_FROM) {
+      issues.push(
+        "EMAIL_FROM: EMAIL_FROM is required in production (e.g. 'My App <noreply@example.com>')."
+      );
+    }
+
+    const hasResend = !!env.RESEND_API_KEY;
+    const hasSmtp =
+      env.EMAIL_PROVIDER === "smtp" &&
+      !!env.SMTP_HOST &&
+      !!env.SMTP_USER &&
+      !!env.SMTP_PASS;
+
+    if (!hasResend && !hasSmtp) {
+      issues.push(
+        "Email: Production requires either RESEND_API_KEY, or EMAIL_PROVIDER=smtp with SMTP_HOST + SMTP_USER + SMTP_PASS. See ADR 0006."
+      );
+    }
+  }
+
   if (issues.length > 0) {
     throw new EnvValidationError(issues);
   }
 
   return {
-    appId: env.VITE_APP_ID ?? "",
     cookieSecret: env.JWT_SECRET!,
     keyEncryptionKey: env.KEY_ENCRYPTION_KEY ?? "",
     databaseUrl: env.DATABASE_URL ?? "",
-    oAuthServerUrl: env.OAUTH_SERVER_URL ?? "",
     ownerOpenId: env.OWNER_OPEN_ID ?? "",
     isProduction: nodeEnv === "production",
     isTest: nodeEnv === "test",

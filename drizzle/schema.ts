@@ -2,13 +2,23 @@ import { int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar, bool
 
 /**
  * Core user table backing auth flow.
+ *
+ * Phase 1b-ii.1 (issue #7 / ADR 0006) reshapes the auth path from
+ * Manus OAuth to Better-Auth. The columns Better-Auth requires
+ * (`emailVerified`, `image`) are added below; the legacy `openId` /
+ * `loginMethod` columns are kept so historical data isn't lost (they
+ * become unused on new logins). Better-Auth uses `id` as the canonical
+ * user identifier going forward.
  */
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  // Legacy from the Manus OAuth path; left in place but no longer read.
+  openId: varchar("openId", { length: 64 }).unique(),
   name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  emailVerified: boolean("emailVerified").default(false).notNull(),
+  image: text("image"),
+  loginMethod: varchar("loginMethod", { length: 64 }), // legacy
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -17,6 +27,59 @@ export const users = mysqlTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+/**
+ * Better-Auth session table. Sessions are looked up by `id` (the value
+ * the client sends in its session cookie). One row per active session
+ * per device. `expiresAt` is hard-deleted by Better-Auth's cleanup.
+ */
+export const sessions = mysqlTable("sessions", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  userId: int("userId").notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  ipAddress: varchar("ipAddress", { length: 64 }),
+  userAgent: text("userAgent"),
+  token: varchar("token", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Session = typeof sessions.$inferSelect;
+
+/**
+ * Better-Auth `accounts` table — links external identities (OAuth
+ * providers, future passkey) to a user. Phase 1b-ii.1 only writes
+ * rows for the `magic-link` provider; Phase 1b-ii.2 adds GitHub.
+ */
+export const accounts = mysqlTable("accounts", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  userId: int("userId").notNull(),
+  accountId: varchar("accountId", { length: 255 }).notNull(),
+  providerId: varchar("providerId", { length: 64 }).notNull(),
+  accessToken: text("accessToken"),
+  refreshToken: text("refreshToken"),
+  idToken: text("idToken"),
+  accessTokenExpiresAt: timestamp("accessTokenExpiresAt"),
+  refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt"),
+  scope: text("scope"),
+  password: text("password"), // unused (we don't do password auth)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Better-Auth `verifications` table — short-lived single-use tokens
+ * used by the magic-link plugin (and the email-verification, password-
+ * reset etc. flows we haven't enabled).
+ */
+export const verifications = mysqlTable("verifications", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  identifier: varchar("identifier", { length: 320 }).notNull(),
+  value: varchar("value", { length: 255 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
 
 /**
  * Girlfriend configuration table
