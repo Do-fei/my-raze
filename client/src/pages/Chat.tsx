@@ -54,7 +54,8 @@ function useTTS() {
   const { data: apiConfig } = trpc.apiConfig.get.useQuery();
   const ttsGenerate = trpc.tts.generate.useMutation();
 
-  const ttsProvider = apiConfig?.ttsProvider || "browser";
+  // Phase 1b-i: apiConfig.get now returns { preferences, keys }.
+  const ttsProvider = apiConfig?.preferences?.ttsProvider || "browser";
 
   // 更新播放速度
   const updateSpeed = useCallback((speed: number) => {

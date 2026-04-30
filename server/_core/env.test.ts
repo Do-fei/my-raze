@@ -42,12 +42,14 @@ describe("env validation (issue #6)", () => {
 
   it("throws when DATABASE_URL is missing in development", async () => {
     process.env.JWT_SECRET = "a".repeat(32);
+    process.env.KEY_ENCRYPTION_KEY = "b".repeat(32);
     process.env.NODE_ENV = "development";
     await expect(import("./env")).rejects.toThrow(/DATABASE_URL is required/);
   });
 
   it("throws when DATABASE_URL is empty string in production", async () => {
     process.env.JWT_SECRET = "a".repeat(32);
+    process.env.KEY_ENCRYPTION_KEY = "b".repeat(32);
     process.env.DATABASE_URL = "";
     process.env.NODE_ENV = "production";
     await expect(import("./env")).rejects.toThrow(
@@ -81,10 +83,12 @@ describe("env validation (issue #6)", () => {
 
   it("loads cleanly when all required vars are valid", async () => {
     process.env.JWT_SECRET = "x".repeat(64);
+    process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
     process.env.DATABASE_URL = "mysql://root:devpass@127.0.0.1:3306/myraze";
     process.env.NODE_ENV = "development";
     const { ENV } = await import("./env");
     expect(ENV.cookieSecret).toBe("x".repeat(64));
+    expect(ENV.keyEncryptionKey).toBe("y".repeat(64));
     expect(ENV.databaseUrl).toBe(
       "mysql://root:devpass@127.0.0.1:3306/myraze"
     );
@@ -94,11 +98,42 @@ describe("env validation (issue #6)", () => {
 
   it("flags isProduction correctly", async () => {
     process.env.JWT_SECRET = "x".repeat(64);
+    process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
     process.env.DATABASE_URL = "mysql://x";
     process.env.NODE_ENV = "production";
     const { ENV } = await import("./env");
     expect(ENV.isProduction).toBe(true);
     expect(ENV.isTest).toBe(false);
+  });
+
+  it("rejects KEY_ENCRYPTION_KEY equal to JWT_SECRET (Phase 1b-i)", async () => {
+    const same = "z".repeat(64);
+    process.env.JWT_SECRET = same;
+    process.env.KEY_ENCRYPTION_KEY = same;
+    process.env.DATABASE_URL = "mysql://x";
+    process.env.NODE_ENV = "production";
+    await expect(import("./env")).rejects.toThrow(
+      /KEY_ENCRYPTION_KEY must NOT equal JWT_SECRET/
+    );
+  });
+
+  it("rejects KEY_ENCRYPTION_KEY shorter than 32 chars in non-test mode", async () => {
+    process.env.JWT_SECRET = "x".repeat(64);
+    process.env.KEY_ENCRYPTION_KEY = "short";
+    process.env.DATABASE_URL = "mysql://x";
+    process.env.NODE_ENV = "development";
+    await expect(import("./env")).rejects.toThrow(
+      /KEY_ENCRYPTION_KEY must be at least 32 characters/
+    );
+  });
+
+  it("does NOT require KEY_ENCRYPTION_KEY in test mode", async () => {
+    process.env.JWT_SECRET = "a".repeat(32);
+    process.env.NODE_ENV = "test";
+    // No KEY_ENCRYPTION_KEY set.
+    const { ENV } = await import("./env");
+    expect(ENV.keyEncryptionKey).toBe("");
+    expect(ENV.isTest).toBe(true);
   });
 
   it("attaches structured `issues` to the thrown error", async () => {

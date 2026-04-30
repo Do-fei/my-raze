@@ -67,7 +67,11 @@ describe("Multi-girlfriend support", () => {
 });
 
 describe("API config management", () => {
-  it("apiConfig.get returns null for new user", async () => {
+  it("apiConfig.get returns { preferences: null, keys: { ...default } } for a new user", async () => {
+    // Phase 1b-i changed the shape: `get` now always returns an object
+    // with `preferences` (null when the user has no row) and a `keys`
+    // map describing every known KeyName (all isSet=false for a fresh
+    // user). This test pins the new contract.
     const user: AuthenticatedUser = {
       id: 99998,
       openId: "new-config-user",
@@ -88,7 +92,21 @@ describe("API config management", () => {
 
     const caller = appRouter.createCaller(ctx);
     const result = await caller.apiConfig.get();
-    expect(result).toBeFalsy();
+    expect(result.preferences).toBeNull();
+    expect(result.keys).toBeDefined();
+    for (const k of [
+      "openrouter",
+      "fal",
+      "elevenlabs",
+      "fish-audio",
+      "openai",
+    ] as const) {
+      expect(result.keys[k]).toEqual({
+        isSet: false,
+        lastFour: null,
+        setAt: null,
+      });
+    }
   });
 });
 
