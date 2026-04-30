@@ -531,10 +531,10 @@ export default function Setup() {
                           <p className="text-xs font-medium text-muted-foreground mb-2">最终发送给 AI 的提示词预览：</p>
                           
                           {/* 全局提示词 */}
-                          {apiConfig?.globalPrompt ? (
+                          {apiConfig?.preferences?.globalPrompt ? (
                             <div className="rounded p-2 bg-blue-500/10 border border-blue-500/20">
                               <span className="text-[10px] font-semibold text-blue-500 uppercase">全局提示词</span>
-                              <p className="mt-1 text-foreground/80">{apiConfig.globalPrompt}</p>
+                              <p className="mt-1 text-foreground/80">{apiConfig.preferences?.globalPrompt}</p>
                             </div>
                           ) : (
                             <div className="rounded p-2 bg-muted/50 border border-dashed">

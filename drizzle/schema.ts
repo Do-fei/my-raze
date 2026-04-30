@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar, boolean } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -103,36 +103,65 @@ export type InsertSelfie = typeof selfies.$inferInsert;
 
 /**
  * API configurations table
- * Stores user's API keys for external services
+ *
+ * Stores per-user provider PREFERENCES (which model, which voice).
+ * Per-user API KEYS used to live here as plaintext varchar columns —
+ * see issue #2. Phase 1b-i (this commit) moved those to the encrypted
+ * `userKeys` table. The only secret-shaped columns left are model /
+ * voice IDs, which are not credentials.
  */
 export const apiConfigs = mysqlTable("apiConfigs", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().unique(),
-  falApiKey: varchar("falApiKey", { length: 200 }), // fal.ai API Key
-  llmApiKey: varchar("llmApiKey", { length: 200 }), // OpenRouter API Key
-  llmApiUrl: varchar("llmApiUrl", { length: 500 }), // LLM API URL (固定为 OpenRouter)
+  llmApiUrl: varchar("llmApiUrl", { length: 500 }), // LLM API URL (defaults to OpenRouter)
   llmModel: varchar("llmModel", { length: 200 }), // 用户选择的模型 ID（如 openai/gpt-4o）
   // TTS 语音配置
-  ttsProvider: mysqlEnum("ttsProvider", ["browser", "elevenlabs", "fishaudio"]).default("browser").notNull(), // 语音提供商
-  elevenlabsApiKey: varchar("elevenlabsApiKey", { length: 200 }), // ElevenLabs API Key
-  elevenlabsVoiceId: varchar("elevenlabsVoiceId", { length: 200 }), // ElevenLabs 选择的声音 ID
-  elevenlabsVoiceName: varchar("elevenlabsVoiceName", { length: 200 }), // ElevenLabs 声音名称
-  fishAudioApiKey: varchar("fishAudioApiKey", { length: 200 }), // Fish Audio API Key
-  fishAudioModelId: varchar("fishAudioModelId", { length: 200 }), // Fish Audio 选择的声音模型 ID
-  fishAudioModelName: varchar("fishAudioModelName", { length: 200 }), // Fish Audio 声音模型名称
+  ttsProvider: mysqlEnum("ttsProvider", ["browser", "elevenlabs", "fishaudio"]).default("browser").notNull(),
+  elevenlabsVoiceId: varchar("elevenlabsVoiceId", { length: 200 }),
+  elevenlabsVoiceName: varchar("elevenlabsVoiceName", { length: 200 }),
+  fishAudioModelId: varchar("fishAudioModelId", { length: 200 }),
+  fishAudioModelName: varchar("fishAudioModelName", { length: 200 }),
   // 语音转写配置
-  whisperProvider: mysqlEnum("whisperProvider", ["manus", "openai"]).default("manus").notNull(), // 语音转写提供商
-  whisperApiKey: varchar("whisperApiKey", { length: 200 }), // OpenAI Whisper API Key
+  whisperProvider: mysqlEnum("whisperProvider", ["manus", "openai"]).default("manus").notNull(),
   // 全局提示词配置
-  globalPrompt: text("globalPrompt"), // 全局默认提示词，所有女友共享
-  replyLanguage: varchar("replyLanguage", { length: 50 }).default("中文"), // 回复语言
-  replyLengthLimit: varchar("replyLengthLimit", { length: 50 }).default("50-100字"), // 回复长度限制
+  globalPrompt: text("globalPrompt"),
+  replyLanguage: varchar("replyLanguage", { length: 50 }).default("中文"),
+  replyLengthLimit: varchar("replyLengthLimit", { length: 50 }).default("50-100字"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type ApiConfig = typeof apiConfigs.$inferSelect;
 export type InsertApiConfig = typeof apiConfigs.$inferInsert;
+
+/**
+ * Encrypted per-user BYOK API keys (issue #2).
+ *
+ * One row per (user, provider). The `encryptedValue` column holds a
+ * `pack`-formatted ciphertext from `server/_core/encryption.ts`
+ * (AES-256-GCM under a server-derived data key). `lastFour` is the
+ * trailing 4 plaintext chars, kept so the UI can render
+ * "API key set ✓ (...XXXX)" without needing to decrypt.
+ */
+export const userKeys = mysqlTable(
+  "userKeys",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    // Logical key name; matches `KeyName` in server/_core/keyProvider/types.ts.
+    name: varchar("name", { length: 64 }).notNull(),
+    encryptedValue: text("encryptedValue").notNull(),
+    lastFour: varchar("lastFour", { length: 8 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    uniqUserName: uniqueIndex("uniq_user_key_name").on(table.userId, table.name),
+  })
+);
+
+export type UserKey = typeof userKeys.$inferSelect;
+export type InsertUserKey = typeof userKeys.$inferInsert;
 
 /**
  * Girlfriend mood tracking table

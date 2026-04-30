@@ -40,6 +40,25 @@ function loadEnv() {
     );
   }
 
+  // --- Required outside test: KEY_ENCRYPTION_KEY (Phase 1b-i / issue #2) ---
+  // Master secret for encrypting per-user BYOK API keys. Same generation
+  // recipe as JWT_SECRET; the two MUST be different values in production.
+  if ((env.NODE_ENV ?? "development") !== "test") {
+    if (!env.KEY_ENCRYPTION_KEY) {
+      issues.push(
+        "KEY_ENCRYPTION_KEY: KEY_ENCRYPTION_KEY is required (encrypts per-user BYOK API keys at rest). Generate with `openssl rand -hex 32` and set it in .env."
+      );
+    } else if (env.KEY_ENCRYPTION_KEY.length < 32) {
+      issues.push(
+        "KEY_ENCRYPTION_KEY: KEY_ENCRYPTION_KEY must be at least 32 characters."
+      );
+    } else if (env.KEY_ENCRYPTION_KEY === env.JWT_SECRET) {
+      issues.push(
+        "KEY_ENCRYPTION_KEY: KEY_ENCRYPTION_KEY must NOT equal JWT_SECRET. Generate two distinct secrets."
+      );
+    }
+  }
+
   // --- NODE_ENV must be a known value (or absent → defaults) ---
   const nodeEnv = (env.NODE_ENV ?? "development") as NodeEnv;
   if (!NODE_ENVS.includes(nodeEnv)) {
@@ -68,6 +87,7 @@ function loadEnv() {
   return {
     appId: env.VITE_APP_ID ?? "",
     cookieSecret: env.JWT_SECRET!,
+    keyEncryptionKey: env.KEY_ENCRYPTION_KEY ?? "",
     databaseUrl: env.DATABASE_URL ?? "",
     oAuthServerUrl: env.OAUTH_SERVER_URL ?? "",
     ownerOpenId: env.OWNER_OPEN_ID ?? "",

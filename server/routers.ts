@@ -1,5 +1,11 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import {
+  keyProvider,
+  KEY_NAMES,
+  validateProviderKey,
+  type KeyName,
+} from "./_core/keyProvider";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
@@ -470,33 +476,48 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         ];
 
         // 7. 调用 LLM 获取回复
+        // 密钥解析顺序（issue #2 / Phase 1b-i）：
+        //   1) 用户的 BYOK OpenRouter key（如果在 Settings 里配过）
+        //   2) 运营方的 OPERATOR_OPENROUTER_KEY（默认订阅用户走这里）
+        //   3) 都没有 → 走 Manus 内置 invokeLLM
+        const openRouterKey = await keyProvider.get(
+          { userId: ctx.user.id },
+          "openrouter"
+        );
         let aiResponse: string;
         try {
-          if (apiConfig?.llmApiKey) {
-            // 使用 OpenRouter API
-            const openRouterUrl = "https://openrouter.ai/api/v1/chat/completions";
+          if (openRouterKey) {
+            const openRouterUrl =
+              "https://openrouter.ai/api/v1/chat/completions";
             const response = await axios.post(
               openRouterUrl,
               {
-                model: apiConfig.llmModel || "openai/gpt-4o-mini",
+                model: apiConfig?.llmModel || "openai/gpt-4o-mini",
                 messages,
               },
               {
                 headers: {
                   "Content-Type": "application/json",
-                  Authorization: `Bearer ${apiConfig.llmApiKey}`,
+                  Authorization: `Bearer ${openRouterKey}`,
                 },
               }
             );
             const messageContent = response.data.choices[0].message.content;
-            aiResponse = typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent);
+            aiResponse =
+              typeof messageContent === "string"
+                ? messageContent
+                : JSON.stringify(messageContent);
           } else {
-            // 使用内置的 LLM API
+            // Manus-built-in fallback (Phase 1b-ii will replace this when
+            // self-hostable auth lands).
             const response = await invokeLLM({ messages });
             const messageContent = response.choices[0].message.content;
-            aiResponse = typeof messageContent === 'string' ? messageContent : (
-              messageContent ? JSON.stringify(messageContent) : "抱歉，我现在有点累了，稍后再聊吧~"
-            );
+            aiResponse =
+              typeof messageContent === "string"
+                ? messageContent
+                : messageContent
+                  ? JSON.stringify(messageContent)
+                  : "抱歉，我现在有点累了，稍后再聊吧~";
           }
         } catch (error) {
           console.error("[Chat] LLM API error:", error);
@@ -554,12 +575,16 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           });
         }
 
-        // 2. 获取 API 配置
-        const apiConfig = await getUserApiConfig(ctx.user.id);
-        if (!apiConfig?.falApiKey) {
+        // 2. 解析 fal.ai 密钥（用户 BYOK → 运营方默认）
+        const falApiKey = await keyProvider.get(
+          { userId: ctx.user.id },
+          "fal"
+        );
+        if (!falApiKey) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: "fal.ai API key not configured",
+            message:
+              "fal.ai API key not configured (set OPERATOR_FAL_KEY or your own key in Settings)",
           });
         }
 
@@ -580,7 +605,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
             {
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Key ${apiConfig.falApiKey}`,
+                Authorization: `Key ${falApiKey}`,
               },
             }
           );
@@ -646,28 +671,42 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
   }),
 
   // ============ API Configuration ============
+  // Phase 1b-i (issues #2 + #3) reshape:
+  //   - Plaintext per-user API keys removed from `apiConfigs`. They live
+  //     encrypted in the `userKeys` table now, accessed via KeyProvider.
+  //   - The legacy `fetch*` routes that took a raw `apiKey` argument from
+  //     the client are GONE — they were the open-proxy described in #3.
+  //     Replacements (`listModels`, `listElevenLabsVoices`, etc.) resolve
+  //     the key server-side via the user's BYOK or the operator default.
+  //   - `get` returns preferences plus a `keys` map of mask info; never
+  //     plaintext.
   apiConfig: router({
-    // 获取 API 配置
+    // Get user preferences + per-key descriptions (no plaintext keys).
     get: protectedProcedure.query(async ({ ctx }) => {
-      return await getUserApiConfig(ctx.user.id);
+      const config = await getUserApiConfig(ctx.user.id);
+      const keys = await keyProvider.describeUserKeys(ctx.user.id);
+      return {
+        // null when the user hasn't saved preferences yet — frontend
+        // treats that as "use defaults".
+        preferences: config ?? null,
+        keys,
+      };
     }),
 
-    // 更新 API 配置
-    upsert: protectedProcedure
+    // Update non-secret preferences (model id, voice id, prompts, etc.).
+    // Key fields no longer accepted here — see `setKey` / `clearKey`.
+    updatePreferences: protectedProcedure
       .input(
         z.object({
-          falApiKey: z.string().optional(),
-          llmApiKey: z.string().optional(),
           llmModel: z.string().optional(),
-          ttsProvider: z.enum(["browser", "elevenlabs", "fishaudio"]).optional(),
-          elevenlabsApiKey: z.string().optional(),
+          ttsProvider: z
+            .enum(["browser", "elevenlabs", "fishaudio"])
+            .optional(),
           elevenlabsVoiceId: z.string().optional(),
           elevenlabsVoiceName: z.string().optional(),
-          fishAudioApiKey: z.string().optional(),
           fishAudioModelId: z.string().optional(),
           fishAudioModelName: z.string().optional(),
           whisperProvider: z.enum(["manus", "openai"]).optional(),
-          whisperApiKey: z.string().optional(),
           globalPrompt: z.string().max(500).nullable().optional(),
           replyLanguage: z.string().max(50).nullable().optional(),
           replyLengthLimit: z.string().max(50).nullable().optional(),
@@ -676,204 +715,202 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
       .mutation(async ({ ctx, input }) => {
         return await upsertApiConfig({
           userId: ctx.user.id,
-          falApiKey: input.falApiKey,
-          llmApiKey: input.llmApiKey,
-          llmApiUrl: input.llmApiKey ? "https://openrouter.ai/api/v1/chat/completions" : undefined,
-          llmModel: input.llmModel,
-          ttsProvider: input.ttsProvider,
-          elevenlabsApiKey: input.elevenlabsApiKey,
-          elevenlabsVoiceId: input.elevenlabsVoiceId,
-          elevenlabsVoiceName: input.elevenlabsVoiceName,
-          fishAudioApiKey: input.fishAudioApiKey,
-          fishAudioModelId: input.fishAudioModelId,
-          fishAudioModelName: input.fishAudioModelName,
-          whisperProvider: input.whisperProvider,
-          whisperApiKey: input.whisperApiKey,
-          globalPrompt: input.globalPrompt,
-          replyLanguage: input.replyLanguage,
-          replyLengthLimit: input.replyLengthLimit,
+          ...input,
         });
       }),
 
-    // 查询 ElevenLabs 声音列表
-    fetchElevenLabsVoices: protectedProcedure
-      .input(z.object({ apiKey: z.string().min(1) }))
-      .query(async ({ input }) => {
+    // Set / replace a user's BYOK key. Stored encrypted; plaintext never
+    // returned to the client again. The server validates the value with a
+    // single test call to the provider before persisting.
+    setKey: protectedProcedure
+      .input(
+        z.object({
+          name: z.enum(KEY_NAMES as unknown as [KeyName, ...KeyName[]]),
+          value: z.string().min(8).max(500),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        // Optional: provider-specific validation (#3 — we replace the
+        // legacy "test on every keystroke" pattern with a single explicit
+        // validation on submit). Failures bubble as TRPCError so the UI
+        // can show "key invalid".
         try {
-          const response = await axios.get("https://api.elevenlabs.io/v1/voices", {
-            headers: {
-              "xi-api-key": input.apiKey,
-            },
+          await validateProviderKey(input.name, input.value);
+        } catch (err: any) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: err?.message ?? "Key validation failed",
           });
-
-          const voices = response.data.voices.map((v: any) => ({
-            id: v.voice_id,
-            name: v.name,
-            category: v.category || "premade",
-            description: v.description || "",
-            previewUrl: v.preview_url || "",
-            labels: v.labels || {},
-          }));
-
-          return { voices, total: voices.length };
-        } catch (error: any) {
-          console.error("[ElevenLabs] Failed to fetch voices:", error?.response?.status);
-          if (error?.response?.status === 401) {
-            throw new Error("ElevenLabs API Key 无效，请检查后重试");
-          }
-          throw new Error("获取声音列表失败，请稍后重试");
         }
+        await keyProvider.setUserKey(ctx.user.id, input.name, input.value);
+        return { ok: true as const };
       }),
 
-    // 查询 Fish Audio 声音模型列表
-    fetchFishAudioModels: protectedProcedure
-      .input(z.object({ apiKey: z.string().min(1), search: z.string().optional() }))
-      .query(async ({ input }) => {
+    // Remove a user's BYOK key. After this, calls fall back to operator
+    // default (or fail if no operator key is configured).
+    clearKey: protectedProcedure
+      .input(
+        z.object({
+          name: z.enum(KEY_NAMES as unknown as [KeyName, ...KeyName[]]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await keyProvider.clearUserKey(ctx.user.id, input.name);
+        return { ok: true as const };
+      }),
+
+    // List OpenRouter chat models. Resolves the key server-side; no
+    // `apiKey` input on the wire (issue #3).
+    listModels: protectedProcedure.query(async ({ ctx }) => {
+      const apiKey = await keyProvider.get(
+        { userId: ctx.user.id },
+        "openrouter"
+      );
+      if (!apiKey) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "OpenRouter key not configured. Set your own in Settings, or have the operator set OPERATOR_OPENROUTER_KEY.",
+        });
+      }
+      try {
+        const response = await axios.get(
+          "https://openrouter.ai/api/v1/models",
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+        const models = response.data.data
+          .filter((m: any) => {
+            const arch = m.architecture;
+            if (!arch) return true;
+            const inputMods = arch.input_modalities || [];
+            const outputMods = arch.output_modalities || [];
+            return (
+              inputMods.includes("text") && outputMods.includes("text")
+            );
+          })
+          .map((m: any) => ({
+            id: m.id,
+            name: m.name || m.id,
+            contextLength: m.context_length || 0,
+            pricing: {
+              prompt: m.pricing?.prompt || "0",
+              completion: m.pricing?.completion || "0",
+            },
+            provider: m.id.split("/")[0] || "unknown",
+          }))
+          .sort((a: any, b: any) => a.name.localeCompare(b.name));
+        return { models, total: models.length };
+      } catch (error: any) {
+        const status = error?.response?.status;
+        if (status === 401) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "OpenRouter key invalid",
+          });
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch model list",
+        });
+      }
+    }),
+
+    // List ElevenLabs voices via server-resolved key.
+    listElevenLabsVoices: protectedProcedure.query(async ({ ctx }) => {
+      const apiKey = await keyProvider.get(
+        { userId: ctx.user.id },
+        "elevenlabs"
+      );
+      if (!apiKey) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "ElevenLabs key not configured",
+        });
+      }
+      try {
+        const response = await axios.get(
+          "https://api.elevenlabs.io/v1/voices",
+          { headers: { "xi-api-key": apiKey } }
+        );
+        const voices = response.data.voices.map((v: any) => ({
+          id: v.voice_id,
+          name: v.name,
+          category: v.category || "premade",
+          description: v.description || "",
+          previewUrl: v.preview_url || "",
+          labels: v.labels || {},
+        }));
+        return { voices, total: voices.length };
+      } catch (error: any) {
+        const status = error?.response?.status;
+        if (status === 401) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "ElevenLabs key invalid",
+          });
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch voices",
+        });
+      }
+    }),
+
+    // List Fish Audio voice models via server-resolved key.
+    listFishAudioModels: protectedProcedure
+      .input(z.object({ search: z.string().optional() }))
+      .query(async ({ ctx, input }) => {
+        const apiKey = await keyProvider.get(
+          { userId: ctx.user.id },
+          "fish-audio"
+        );
+        if (!apiKey) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Fish Audio key not configured",
+          });
+        }
         try {
           const params: any = { page_size: 100, page_number: 1 };
           if (input.search) params.title = input.search;
-
-          const response = await axios.get("https://api.fish.audio/model", {
-            headers: {
-              Authorization: `Bearer ${input.apiKey}`,
-            },
-            params,
-          });
-
+          const response = await axios.get(
+            "https://api.fish.audio/model",
+            {
+              headers: { Authorization: `Bearer ${apiKey}` },
+              params,
+            }
+          );
           const models = response.data.items.map((m: any) => ({
             id: m._id,
             name: m.title || m._id,
             description: m.description || "",
             tags: m.tags || [],
           }));
-
-          return { models, total: response.data.total || models.length };
-        } catch (error: any) {
-          console.error("[FishAudio] Failed to fetch models:", error?.response?.status);
-          if (error?.response?.status === 401 || error?.response?.status === 403) {
-            throw new Error("Fish Audio API Key 无效，请检查后重试");
-          }
-          throw new Error("获取声音模型列表失败，请稍后重试");
-        }
-      }),
-
-    // 查询 OpenRouter 可用模型列表
-    fetchModels: protectedProcedure
-      .input(z.object({ apiKey: z.string().min(1) }))
-      .query(async ({ input }) => {
-        try {
-          const response = await axios.get("https://openrouter.ai/api/v1/models", {
-            headers: {
-              Authorization: `Bearer ${input.apiKey}`,
-            },
-          });
-
-          const models = response.data.data
-            .filter((m: any) => {
-              // 只保留支持文本对话的模型
-              const arch = m.architecture;
-              if (!arch) return true;
-              const inputMods = arch.input_modalities || [];
-              const outputMods = arch.output_modalities || [];
-              return inputMods.includes("text") && outputMods.includes("text");
-            })
-            .map((m: any) => ({
-              id: m.id,
-              name: m.name || m.id,
-              contextLength: m.context_length || 0,
-              pricing: {
-                prompt: m.pricing?.prompt || "0",
-                completion: m.pricing?.completion || "0",
-              },
-              provider: m.id.split("/")[0] || "unknown",
-            }))
-            .sort((a: any, b: any) => a.name.localeCompare(b.name));
-
-          return { models, total: models.length };
-        } catch (error: any) {
-          console.error("[OpenRouter] Failed to fetch models:", error?.response?.status);
-          if (error?.response?.status === 401) {
-            throw new Error("API Key 无效，请检查后重试");
-          }
-          throw new Error("获取模型列表失败，请稍后重试");
-        }
-      }),
-
-    // 查询 OpenRouter 余额
-    fetchOpenRouterCredits: protectedProcedure
-      .input(z.object({ apiKey: z.string().min(1) }))
-      .query(async ({ input }) => {
-        try {
-          const response = await axios.get("https://openrouter.ai/api/v1/credits", {
-            headers: {
-              Authorization: `Bearer ${input.apiKey}`,
-            },
-          });
-          const data = response.data.data;
           return {
-            totalCredits: data.total_credits || 0,
-            totalUsage: data.total_usage || 0,
-            remaining: (data.total_credits || 0) - (data.total_usage || 0),
+            models,
+            total: response.data.total || models.length,
           };
         } catch (error: any) {
-          console.error("[OpenRouter] Failed to fetch credits:", error?.response?.status);
-          if (error?.response?.status === 401 || error?.response?.status === 403) {
-            throw new Error("无法查询余额，API Key 可能不支持余额查询");
+          const status = error?.response?.status;
+          if (status === 401 || status === 403) {
+            throw new TRPCError({
+              code: "UNAUTHORIZED",
+              message: "Fish Audio key invalid",
+            });
           }
-          throw new Error("查询 OpenRouter 余额失败");
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to fetch voice models",
+          });
         }
       }),
 
-    // 查询 ElevenLabs 订阅信息
-    fetchElevenLabsUsage: protectedProcedure
-      .input(z.object({ apiKey: z.string().min(1) }))
-      .query(async ({ input }) => {
-        try {
-          const response = await axios.get("https://api.elevenlabs.io/v1/user/subscription", {
-            headers: {
-              "xi-api-key": input.apiKey,
-            },
-          });
-          const data = response.data;
-          return {
-            tier: data.tier || "free",
-            characterCount: data.character_count || 0,
-            characterLimit: data.character_limit || 0,
-            remaining: (data.character_limit || 0) - (data.character_count || 0),
-            status: data.status || "unknown",
-          };
-        } catch (error: any) {
-          console.error("[ElevenLabs] Failed to fetch usage:", error?.response?.status);
-          if (error?.response?.status === 401) {
-            throw new Error("API Key 无效，无法查询用量");
-          }
-          throw new Error("查询 ElevenLabs 用量失败");
-        }
-      }),
-
-    // 查询 Fish Audio 余额
-    fetchFishAudioCredits: protectedProcedure
-      .input(z.object({ apiKey: z.string().min(1) }))
-      .query(async ({ input }) => {
-        try {
-          const response = await axios.get("https://api.fish.audio/wallet/self/api-credit", {
-            headers: {
-              Authorization: `Bearer ${input.apiKey}`,
-            },
-          });
-          const data = response.data;
-          return {
-            credit: parseFloat(data.credit) || 0,
-            hasFreeCredit: data.has_free_credit || false,
-          };
-        } catch (error: any) {
-          console.error("[FishAudio] Failed to fetch credits:", error?.response?.status);
-          if (error?.response?.status === 401 || error?.response?.status === 403) {
-            throw new Error("API Key 无效，无法查询余额");
-          }
-          throw new Error("查询 Fish Audio 余额失败");
-        }
-      }),
+    // The legacy `fetchOpenRouterCredits`, `fetchElevenLabsUsage`, and
+    // `fetchFishAudioCredits` routes are intentionally NOT recreated.
+    // Per-user usage will be surfaced through the subscription quota
+    // meters built in Phase 1c (issue #10), not via raw provider account
+    // peeks. Self-hosters who really want raw credits can call the
+    // providers directly with their BYOK key.
   }),
 
   // ============ Mood System ============
@@ -1051,8 +1088,17 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         const provider = apiConfig.ttsProvider || "browser";
 
         if (provider === "elevenlabs") {
-          if (!apiConfig.elevenlabsApiKey || !apiConfig.elevenlabsVoiceId) {
-            throw new Error("请先配置 ElevenLabs API Key 并选择声音");
+          // Phase 1b-i: resolve key via KeyProvider (BYOK → operator).
+          const elevenKey = await keyProvider.get(
+            { userId: ctx.user.id },
+            "elevenlabs"
+          );
+          if (!elevenKey || !apiConfig.elevenlabsVoiceId) {
+            throw new Error(
+              elevenKey
+                ? "请先在 Settings 中选择 ElevenLabs 声音"
+                : "ElevenLabs 密钥未配置（运营方未设置或您未提供 BYOK）"
+            );
           }
 
           try {
@@ -1064,7 +1110,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
               },
               {
                 headers: {
-                  "xi-api-key": apiConfig.elevenlabsApiKey,
+                  "xi-api-key": elevenKey,
                   "Content-Type": "application/json",
                   Accept: "audio/mpeg",
                 },
@@ -1083,8 +1129,16 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
             throw new Error("ElevenLabs 语音生成失败");
           }
         } else if (provider === "fishaudio") {
-          if (!apiConfig.fishAudioApiKey || !apiConfig.fishAudioModelId) {
-            throw new Error("请先配置 Fish Audio API Key 并选择声音模型");
+          const fishKey = await keyProvider.get(
+            { userId: ctx.user.id },
+            "fish-audio"
+          );
+          if (!fishKey || !apiConfig.fishAudioModelId) {
+            throw new Error(
+              fishKey
+                ? "请先在 Settings 中选择 Fish Audio 声音模型"
+                : "Fish Audio 密钥未配置（运营方未设置或您未提供 BYOK）"
+            );
           }
 
           try {
@@ -1097,7 +1151,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
               },
               {
                 headers: {
-                  Authorization: `Bearer ${apiConfig.fishAudioApiKey}`,
+                  Authorization: `Bearer ${fishKey}`,
                   "Content-Type": "application/json",
                   model: "s1",
                 },
@@ -1163,7 +1217,11 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         // 4. 获取用户的语音转写配置
         const apiConfig = await getUserApiConfig(ctx.user.id);
         const whisperProvider = apiConfig?.whisperProvider || "manus";
-        const whisperApiKey = apiConfig?.whisperApiKey;
+        // Phase 1b-i: OpenAI Whisper key now resolved via KeyProvider.
+        const whisperApiKey = await keyProvider.get(
+          { userId: ctx.user.id },
+          "openai"
+        );
 
         // 5. 根据配置选择 API
         let result;
