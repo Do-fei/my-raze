@@ -52,7 +52,7 @@ export class EnvKeyProvider implements KeyProvider {
   }
 
   async setUserKey(
-    userId: number,
+    userId: string,
     name: KeyName,
     plaintext: string
   ): Promise<void> {
@@ -81,7 +81,7 @@ export class EnvKeyProvider implements KeyProvider {
       });
   }
 
-  async clearUserKey(userId: number, name: KeyName): Promise<void> {
+  async clearUserKey(userId: string, name: KeyName): Promise<void> {
     const db = await getDb();
     if (!db) return; // silent no-op in test mode (no DB)
     await db
@@ -90,7 +90,7 @@ export class EnvKeyProvider implements KeyProvider {
   }
 
   async describeUserKeys(
-    userId: number
+    userId: string
   ): Promise<Record<KeyName, KeyDescription>> {
     const db = await getDb();
     const result: Record<KeyName, KeyDescription> = {} as any;
@@ -127,7 +127,7 @@ function readOperatorKey(name: KeyName): string | null {
 }
 
 async function readUserKey(
-  userId: number,
+  userId: string,
   name: KeyName
 ): Promise<string | null> {
   const db = await getDb();

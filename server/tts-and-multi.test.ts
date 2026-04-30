@@ -6,7 +6,7 @@ type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(): { ctx: TrpcContext } {
   const user: AuthenticatedUser = {
-    id: 1,
+    id: "test-user-1",
     openId: "test-user",
     email: "test@example.com",
     name: "Test User",
@@ -43,7 +43,7 @@ describe("Multi-girlfriend support", () => {
   it("girlfriend.getActive returns null when no active girlfriend", async () => {
     // Create a fresh user context that has no girlfriends
     const user: AuthenticatedUser = {
-      id: 99999,
+      id: "test-user-99999",
       openId: "no-gf-user",
       email: "nogf@example.com",
       name: "No GF User",
@@ -73,7 +73,7 @@ describe("API config management", () => {
     // map describing every known KeyName (all isSet=false for a fresh
     // user). This test pins the new contract.
     const user: AuthenticatedUser = {
-      id: 99998,
+      id: "test-user-99998",
       openId: "new-config-user",
       email: "newconfig@example.com",
       name: "New Config User",

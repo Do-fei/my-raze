@@ -174,9 +174,10 @@ account-deletion request can be self-served end-to-end.
 | ----- | ------------------------------------------- | -------- |
 | 0001  | Toolchain choices for local dev             | Accepted |
 | 0002  | Monetization: subscription + BYOK           | Accepted |
-| 0003  | Auth replacement: Lucia v3                  | Accepted |
+| 0003  | Auth replacement: Lucia v3                  | ⛔ Superseded by 0006 |
 | 0004  | Billing platform: Lemon Squeezy             | Accepted |
 | 0005  | Pricing tiers, free-tier limits, refunds    | Accepted |
+| 0006  | Auth library: Better-Auth (supersedes 0003) | Accepted |
 
 ---
 

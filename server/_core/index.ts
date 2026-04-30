@@ -3,8 +3,9 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { toNodeHandler } from "better-auth/node";
 import { csrfCookieMiddleware, csrfVerifyMiddleware } from "./csrf";
-import { registerOAuthRoutes } from "./oauth";
+import { auth } from "./auth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -37,9 +38,11 @@ async function startServer() {
   // CSRF: set the double-submit cookie on every request — must run before
   // any state-changing handler. See server/_core/csrf.ts (issue #8).
   app.use(csrfCookieMiddleware);
-  // OAuth callback under /api/oauth/callback. Skips CSRF (it's a top-level
-  // GET redirect from the IdP and carries its own state parameter).
-  registerOAuthRoutes(app);
+  // Better-Auth handles /api/auth/* (magic-link, session, etc.).
+  // Mounted before tRPC so auth endpoints are not behind CSRF verify.
+  if (auth) {
+    app.all("/api/auth/*", toNodeHandler(auth.handler));
+  }
   // tRPC API — verify CSRF token on every state-changing request.
   app.use(
     "/api/trpc",

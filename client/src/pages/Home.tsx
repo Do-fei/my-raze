@@ -2,7 +2,6 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import {
   Heart,
@@ -370,7 +369,7 @@ export default function Home() {
             </Card>
           </div>
 
-          <Button size="lg" className="w-full text-base" onClick={() => (window.location.href = getLoginUrl())}>
+          <Button size="lg" className="w-full text-base" onClick={() => (window.location.href = "/login")}>
             <Heart className="w-5 h-5 mr-2" />
             立即开始
           </Button>
