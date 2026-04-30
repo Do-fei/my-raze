@@ -170,10 +170,13 @@ account-deletion request can be self-served end-to-end.
 
 ## ADR index
 
-| ID    | Title                              | Status   |
-| ----- | ---------------------------------- | -------- |
-| 0001  | Toolchain choices for local dev    | Accepted |
-| 0002  | Monetization: subscription + BYOK  | Accepted |
+| ID    | Title                                       | Status   |
+| ----- | ------------------------------------------- | -------- |
+| 0001  | Toolchain choices for local dev             | Accepted |
+| 0002  | Monetization: subscription + BYOK           | Accepted |
+| 0003  | Auth replacement: Lucia v3                  | Accepted |
+| 0004  | Billing platform: Lemon Squeezy             | Accepted |
+| 0005  | Pricing tiers, free-tier limits, refunds    | Accepted |
 
 ---
 
