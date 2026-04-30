@@ -37,14 +37,33 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+/**
+ * Read a cookie by name from `document.cookie`. Returns undefined if not set.
+ * Used to echo the CSRF token in the X-CSRF-Token header (issue #8).
+ */
+function readCookie(name: string): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = document.cookie.match(new RegExp("(?:^|; )" + escaped + "=([^;]*)"));
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
       fetch(input, init) {
+        // Double-submit CSRF: read the csrf_token cookie set by the server
+        // (server/_core/csrf.ts) and echo it as X-CSRF-Token. Server-side
+        // middleware rejects mutations whose cookie ≠ header.
+        const csrfToken = readCookie("csrf_token");
+        const headers = new Headers(init?.headers);
+        if (csrfToken) headers.set("x-csrf-token", csrfToken);
+
         return globalThis.fetch(input, {
           ...(init ?? {}),
+          headers,
           credentials: "include",
         });
       },

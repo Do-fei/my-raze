@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { csrfCookieMiddleware, csrfVerifyMiddleware } from "./csrf";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -33,11 +34,16 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // OAuth callback under /api/oauth/callback
+  // CSRF: set the double-submit cookie on every request — must run before
+  // any state-changing handler. See server/_core/csrf.ts (issue #8).
+  app.use(csrfCookieMiddleware);
+  // OAuth callback under /api/oauth/callback. Skips CSRF (it's a top-level
+  // GET redirect from the IdP and carries its own state parameter).
   registerOAuthRoutes(app);
-  // tRPC API
+  // tRPC API — verify CSRF token on every state-changing request.
   app.use(
     "/api/trpc",
+    csrfVerifyMiddleware,
     createExpressMiddleware({
       router: appRouter,
       createContext,
