@@ -17,7 +17,7 @@ export async function createContext(
   try {
     const sessionUser = await getSessionUser(opts.req);
     if (sessionUser?.id) {
-      const dbUser = await getUserById(Number(sessionUser.id));
+      const dbUser = await getUserById(sessionUser.id);
       user = dbUser ?? null;
     }
   } catch {

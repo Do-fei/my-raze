@@ -82,8 +82,13 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
+      // Defense-in-depth — Better-Auth's own /api/auth/sign-out is the
+      // primary signout path; this clears the same cookies for clients
+      // that hit tRPC directly. See ADR 0006.
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie("app_session", { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie("better-auth.session_token", { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie("better-auth.session_data", { ...cookieOptions, maxAge: -1 });
+      // Also clear the legacy v3 cookie if any client still has it.
       ctx.res.clearCookie("app_session_id", { ...cookieOptions, maxAge: -1 });
       return {
         success: true,

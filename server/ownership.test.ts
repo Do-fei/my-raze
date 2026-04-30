@@ -29,7 +29,7 @@ import * as db from "./db";
 import { appRouter } from "./routers";
 
 const fakeUser: User = {
-  id: 42,
+  id: "test-user-42",
   openId: "test-openid-42",
   name: "Tester",
   email: null,
@@ -61,7 +61,7 @@ describe("issue #4: ownership-before-write", () => {
         callOrder.push("getConversation");
         return {
           id: 1,
-          userId: 42,
+          userId: "test-user-42",
           girlfriendId: 1,
           title: null,
           createdAt: new Date(),

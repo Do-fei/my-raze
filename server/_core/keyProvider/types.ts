@@ -26,7 +26,7 @@ export const KEY_NAMES = [
 
 export type KeyName = (typeof KEY_NAMES)[number];
 
-export type KeyScope = "operator" | { userId: number };
+export type KeyScope = "operator" | { userId: string };
 
 export type KeyDescription = {
   /** Whether the user has uploaded a BYOK key for this provider. */
@@ -59,17 +59,17 @@ export interface KeyProvider {
    * Store an encrypted BYOK key for the given user. Replaces any
    * existing key under the same name.
    */
-  setUserKey(userId: number, name: KeyName, plaintext: string): Promise<void>;
+  setUserKey(userId: string, name: KeyName, plaintext: string): Promise<void>;
 
   /**
    * Remove a user's BYOK key. After this call, `get({ userId }, name)`
    * falls back to the operator key (if any).
    */
-  clearUserKey(userId: number, name: KeyName): Promise<void>;
+  clearUserKey(userId: string, name: KeyName): Promise<void>;
 
   /**
    * Describe a user's keys for safe display. Returns one entry per known
    * KeyName; no plaintext is ever returned.
    */
-  describeUserKeys(userId: number): Promise<Record<KeyName, KeyDescription>>;
+  describeUserKeys(userId: string): Promise<Record<KeyName, KeyDescription>>;
 }

@@ -1,7 +1,6 @@
 import { eq, desc, and, like, sql, isNull, isNotNull, inArray, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
-  InsertUser,
   users,
   girlfriends,
   conversations,
@@ -25,7 +24,6 @@ import {
   type Notification,
   type InsertNotification,
 } from "../drizzle/schema";
-import { ENV } from "./_core/env";
 import { log } from "./_core/log";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -43,83 +41,19 @@ export async function getDb() {
 }
 
 // ============ User Functions ============
+//
+// Phase 1b-ii.1 (ADR 0006) moved user CRUD to Better-Auth — see
+// `server/_core/auth.ts`. The `upsertUser` / `getUserByOpenId`
+// helpers from the Manus OAuth path were deleted with the rest of
+// `oauth.ts` / `sdk.ts`. The auto-promote-to-admin behavior keyed on
+// `OWNER_OPEN_ID` is gone; admin elevation now happens manually
+// (issue #16 will add an admin CLI).
 
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
-
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    log.error("[Database] Failed to upsert user", error);
-    throw error;
-  }
-}
-
-export async function getUserById(id: number) {
+export async function getUserById(id: string) {
   const db = await getDb();
   if (!db) return undefined;
 
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -149,7 +83,7 @@ export async function createGirlfriend(data: InsertGirlfriend): Promise<Girlfrie
   return inserted[0]!;
 }
 
-export async function getActiveGirlfriend(userId: number): Promise<Girlfriend | undefined> {
+export async function getActiveGirlfriend(userId: string): Promise<Girlfriend | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
@@ -162,7 +96,7 @@ export async function getActiveGirlfriend(userId: number): Promise<Girlfriend | 
   return result[0];
 }
 
-export async function getUserGirlfriends(userId: number): Promise<Girlfriend[]> {
+export async function getUserGirlfriends(userId: string): Promise<Girlfriend[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -175,7 +109,7 @@ export async function getUserGirlfriends(userId: number): Promise<Girlfriend[]> 
 
 export async function updateGirlfriend(
   id: number,
-  userId: number,
+  userId: string,
   data: Partial<InsertGirlfriend>
 ): Promise<void> {
   const db = await getDb();
@@ -213,7 +147,7 @@ export async function createConversation(data: InsertConversation): Promise<Conv
   return inserted[0]!;
 }
 
-export async function getUserConversations(userId: number): Promise<Conversation[]> {
+export async function getUserConversations(userId: string): Promise<Conversation[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -226,7 +160,7 @@ export async function getUserConversations(userId: number): Promise<Conversation
 
 export async function getConversation(
   id: number,
-  userId: number
+  userId: string
 ): Promise<Conversation | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -293,7 +227,7 @@ export async function createSelfie(data: InsertSelfie): Promise<Selfie> {
   return inserted[0]!;
 }
 
-export async function getUserSelfies(userId: number): Promise<Selfie[]> {
+export async function getUserSelfies(userId: string): Promise<Selfie[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -315,7 +249,7 @@ export async function getGirlfriendSelfies(girlfriendId: number): Promise<Selfie
     .orderBy(desc(selfies.createdAt));
 }
 
-export async function deleteSelfie(id: number, userId: number): Promise<void> {
+export async function deleteSelfie(id: number, userId: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -361,7 +295,7 @@ export async function upsertApiConfig(data: InsertApiConfig): Promise<ApiConfig>
   }
 }
 
-export async function getUserApiConfig(userId: number): Promise<ApiConfig | undefined> {
+export async function getUserApiConfig(userId: string): Promise<ApiConfig | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
@@ -377,7 +311,7 @@ export async function getUserApiConfig(userId: number): Promise<ApiConfig | unde
 // ============ Soft Delete Girlfriend (Trash) ============
 
 /** 软删除：设置 deletedAt 时间戳，保留 7 天可恢复 */
-export async function softDeleteGirlfriend(id: number, userId: number): Promise<void> {
+export async function softDeleteGirlfriend(id: number, userId: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -388,7 +322,7 @@ export async function softDeleteGirlfriend(id: number, userId: number): Promise<
 }
 
 /** 批量软删除 */
-export async function softDeleteGirlfriends(ids: number[], userId: number): Promise<void> {
+export async function softDeleteGirlfriends(ids: number[], userId: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -401,7 +335,7 @@ export async function softDeleteGirlfriends(ids: number[], userId: number): Prom
 }
 
 /** 恢复女友：清除 deletedAt */
-export async function restoreGirlfriend(id: number, userId: number): Promise<void> {
+export async function restoreGirlfriend(id: number, userId: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -412,7 +346,7 @@ export async function restoreGirlfriend(id: number, userId: number): Promise<voi
 }
 
 /** 永久删除：级联清除所有关联数据 */
-export async function permanentDeleteGirlfriend(id: number, userId: number): Promise<void> {
+export async function permanentDeleteGirlfriend(id: number, userId: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -445,7 +379,7 @@ export async function permanentDeleteGirlfriend(id: number, userId: number): Pro
 }
 
 /** 获取回收站列表（已软删除的女友） */
-export async function getTrashGirlfriends(userId: number): Promise<Girlfriend[]> {
+export async function getTrashGirlfriends(userId: string): Promise<Girlfriend[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -457,7 +391,7 @@ export async function getTrashGirlfriends(userId: number): Promise<Girlfriend[]>
 }
 
 /** 清理过期回收站项目（超过 7 天的永久删除） */
-export async function cleanupExpiredTrash(userId: number): Promise<number> {
+export async function cleanupExpiredTrash(userId: string): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
@@ -483,7 +417,7 @@ export async function cleanupExpiredTrash(userId: number): Promise<number> {
 
 // ============ Conversations with Last Message ============
 
-export async function getConversationsWithLastMessage(userId: number): Promise<
+export async function getConversationsWithLastMessage(userId: string): Promise<
   (Conversation & { lastMessage?: string; lastMessageAt?: Date; girlfriendName?: string; girlfriendImage?: string })[]
 > {
   const db = await getDb();
@@ -533,7 +467,7 @@ export async function getConversationsWithLastMessage(userId: number): Promise<
 // ============ Search Conversations ============
 
 export async function searchConversations(
-  userId: number,
+  userId: string,
   keyword: string
 ): Promise<
   (Conversation & { lastMessage?: string; lastMessageAt?: Date; girlfriendName?: string; girlfriendImage?: string; matchedMessage?: string })[] 
@@ -614,7 +548,7 @@ export async function searchConversations(
 // ============ Girlfriend Mood Functions ============
 
 export async function getGirlfriendMood(
-  userId: number,
+  userId: string,
   girlfriendId: number
 ): Promise<GirlfriendMood | undefined> {
   const db = await getDb();
@@ -678,7 +612,7 @@ export async function upsertGirlfriendMood(
 }
 
 export async function getAllGirlfriendMoods(
-  userId: number
+  userId: string
 ): Promise<GirlfriendMood[]> {
   const db = await getDb();
   if (!db) return [];
@@ -691,7 +625,7 @@ export async function getAllGirlfriendMoods(
 
 // ============ Create Default Girlfriend ============
 
-export async function createDefaultGirlfriend(userId: number, data: InsertGirlfriend): Promise<Girlfriend> {
+export async function createDefaultGirlfriend(userId: string, data: InsertGirlfriend): Promise<Girlfriend> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -737,7 +671,7 @@ export async function createNotification(data: InsertNotification): Promise<Noti
   return inserted[0]!;
 }
 
-export async function getUserNotifications(userId: number, limit = 20): Promise<Notification[]> {
+export async function getUserNotifications(userId: string, limit = 20): Promise<Notification[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -749,7 +683,7 @@ export async function getUserNotifications(userId: number, limit = 20): Promise<
     .limit(limit);
 }
 
-export async function getUnreadNotificationCount(userId: number): Promise<number> {
+export async function getUnreadNotificationCount(userId: string): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -761,7 +695,7 @@ export async function getUnreadNotificationCount(userId: number): Promise<number
   return result[0]?.count ?? 0;
 }
 
-export async function markNotificationRead(id: number, userId: number): Promise<void> {
+export async function markNotificationRead(id: number, userId: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -771,7 +705,7 @@ export async function markNotificationRead(id: number, userId: number): Promise<
     .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
 }
 
-export async function markAllNotificationsRead(userId: number): Promise<void> {
+export async function markAllNotificationsRead(userId: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -826,7 +760,7 @@ export function getRandomProactiveMessage(type: keyof typeof PROACTIVE_MESSAGES)
 }
 
 // 检查是否应该发送主动消息（基于上次聊天时间和心情）
-export async function checkAndCreateProactiveNotification(userId: number): Promise<Notification | null> {
+export async function checkAndCreateProactiveNotification(userId: string): Promise<Notification | null> {
   const db = await getDb();
   if (!db) return null;
 
@@ -904,7 +838,7 @@ import {
 /**
  * 获取女友的亲密度信息（含衰减计算）
  */
-export async function getIntimacyInfo(girlfriendId: number, userId: number) {
+export async function getIntimacyInfo(girlfriendId: number, userId: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -957,7 +891,7 @@ export async function getIntimacyInfo(girlfriendId: number, userId: number) {
 /**
  * 获取今日已获得的经验值总量
  */
-export async function getTodayPoints(girlfriendId: number, userId: number): Promise<number> {
+export async function getTodayPoints(girlfriendId: number, userId: string): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
@@ -973,7 +907,7 @@ export async function getTodayPoints(girlfriendId: number, userId: number): Prom
  */
 export async function addIntimacyPoints(
   girlfriendId: number,
-  userId: number,
+  userId: string,
   points: number,
   reason: string
 ): Promise<{

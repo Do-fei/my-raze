@@ -13,7 +13,7 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
   const clearedCookies: CookieCall[] = [];
 
   const user: AuthenticatedUser = {
-    id: 1,
+    id: "test-user-1",
     openId: "sample-user",
     email: "sample@example.com",
     name: "Sample User",
@@ -41,16 +41,19 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
 }
 
 describe("auth.logout", () => {
-  it("clears both session cookies and reports success", async () => {
+  it("clears Better-Auth session cookies + the legacy v3 cookie", async () => {
     const { ctx, clearedCookies } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.auth.logout();
 
     expect(result).toEqual({ success: true });
-    expect(clearedCookies).toHaveLength(2);
-    expect(clearedCookies[0]?.name).toBe("app_session");
-    expect(clearedCookies[1]?.name).toBe("app_session_id");
+    expect(clearedCookies).toHaveLength(3);
+    expect(clearedCookies.map(c => c.name)).toEqual([
+      "better-auth.session_token",
+      "better-auth.session_data",
+      "app_session_id",
+    ]);
     expect(clearedCookies[0]?.options).toMatchObject({
       maxAge: -1,
       secure: true,

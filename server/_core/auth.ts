@@ -44,14 +44,10 @@ export const auth = authDb
           verification: schema.verifications,
         },
       }),
-      // The `users` table uses an int auto-increment id (legacy from
-      // pre-Better-Auth). Tell Better-Auth so it doesn't try to write
-      // string UUIDs into an integer column.
-      advanced: {
-        database: {
-          generateId: false,
-        },
-      },
+      // Phase 1b-ii.1: `users.id` is `varchar(255)` so Better-Auth manages
+      // ids uniformly across all four auth tables (users / sessions /
+      // accounts / verifications). See ADR 0006 + migration 0013.
+      baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
       // Sessions live for 30 days; refreshed within the last 7 of those.
       session: {
         expiresIn: 60 * 60 * 24 * 30,
@@ -61,12 +57,9 @@ export const auth = authDb
           maxAge: 60 * 5, // 5 minutes
         },
       },
-      // Cookie hardening matches the Phase 1a-ii baseline.
-      cookies: {
-        sessionToken: {
-          name: "app_session",
-        },
-      },
+      // Better-Auth defaults the cookie names to `better-auth.session_token`
+      // and `better-auth.session_data`. We let it own those names; the
+      // tRPC logout route clears both for defense-in-depth.
       // Production deployments tighten this. Dev allows http://localhost:3000.
       trustedOrigins: ENV.isProduction
         ? [/* set via env in deploy */]

@@ -106,7 +106,6 @@ function loadEnv() {
     cookieSecret: env.JWT_SECRET!,
     keyEncryptionKey: env.KEY_ENCRYPTION_KEY ?? "",
     databaseUrl: env.DATABASE_URL ?? "",
-    ownerOpenId: env.OWNER_OPEN_ID ?? "",
     isProduction: nodeEnv === "production",
     isTest: nodeEnv === "test",
     forgeApiUrl: env.BUILT_IN_FORGE_API_URL ?? "",

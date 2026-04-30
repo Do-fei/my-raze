@@ -9,9 +9,14 @@ import { int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar, bool
  * `loginMethod` columns are kept so historical data isn't lost (they
  * become unused on new logins). Better-Auth uses `id` as the canonical
  * user identifier going forward.
+ *
+ * `id` is `varchar(255)` so Better-Auth can manage all four auth tables
+ * (`users` / `sessions` / `accounts` / `verifications`) under a single
+ * id type. The dev DB was empty when this change landed, so the column
+ * type flip didn't require a backfill — see migration 0013.
  */
 export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
+  id: varchar("id", { length: 255 }).primaryKey(),
   // Legacy from the Manus OAuth path; left in place but no longer read.
   openId: varchar("openId", { length: 64 }).unique(),
   name: text("name"),
@@ -35,7 +40,7 @@ export type InsertUser = typeof users.$inferInsert;
  */
 export const sessions = mysqlTable("sessions", {
   id: varchar("id", { length: 255 }).primaryKey(),
-  userId: int("userId").notNull(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   expiresAt: timestamp("expiresAt").notNull(),
   ipAddress: varchar("ipAddress", { length: 64 }),
   userAgent: text("userAgent"),
@@ -53,7 +58,7 @@ export type Session = typeof sessions.$inferSelect;
  */
 export const accounts = mysqlTable("accounts", {
   id: varchar("id", { length: 255 }).primaryKey(),
-  userId: int("userId").notNull(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   accountId: varchar("accountId", { length: 255 }).notNull(),
   providerId: varchar("providerId", { length: 64 }).notNull(),
   accessToken: text("accessToken"),
@@ -87,7 +92,7 @@ export const verifications = mysqlTable("verifications", {
  */
 export const girlfriends = mysqlTable("girlfriends", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   name: varchar("name", { length: 100 }).notNull(),
   personality: text("personality").notNull(), // 性格描述，用于 LLM 系统提示词
   appearance: text("appearance").notNull(), // 外貌描述，用于图片生成
@@ -116,7 +121,7 @@ export type InsertGirlfriend = typeof girlfriends.$inferInsert;
  */
 export const conversations = mysqlTable("conversations", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   girlfriendId: int("girlfriendId").notNull(),
   title: varchar("title", { length: 200 }), // 对话标题（可选）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -150,7 +155,7 @@ export type InsertMessage = typeof messages.$inferInsert;
  */
 export const selfies = mysqlTable("selfies", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   girlfriendId: int("girlfriendId").notNull(),
   messageId: int("messageId"), // 关联的消息 ID（可选）
   imageUrl: text("imageUrl").notNull(),
@@ -175,7 +180,7 @@ export type InsertSelfie = typeof selfies.$inferInsert;
  */
 export const apiConfigs = mysqlTable("apiConfigs", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().unique(),
+  userId: varchar("userId", { length: 255 }).notNull().unique(),
   llmApiUrl: varchar("llmApiUrl", { length: 500 }), // LLM API URL (defaults to OpenRouter)
   llmModel: varchar("llmModel", { length: 200 }), // 用户选择的模型 ID（如 openai/gpt-4o）
   // TTS 语音配置
@@ -210,7 +215,7 @@ export const userKeys = mysqlTable(
   "userKeys",
   {
     id: int("id").autoincrement().primaryKey(),
-    userId: int("userId").notNull(),
+    userId: varchar("userId", { length: 255 }).notNull(),
     // Logical key name; matches `KeyName` in server/_core/keyProvider/types.ts.
     name: varchar("name", { length: 64 }).notNull(),
     encryptedValue: text("encryptedValue").notNull(),
@@ -232,7 +237,7 @@ export type InsertUserKey = typeof userKeys.$inferInsert;
  */
 export const girlfriendMoods = mysqlTable("girlfriendMoods", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   girlfriendId: int("girlfriendId").notNull(),
   mood: mysqlEnum("mood", ["excited", "happy", "content", "neutral", "lonely", "sad"]).default("happy").notNull(),
   moodScore: int("moodScore").default(70).notNull(), // 0-100, higher = happier
@@ -253,7 +258,7 @@ export type InsertGirlfriendMood = typeof girlfriendMoods.$inferInsert;
  */
 export const notifications = mysqlTable("notifications", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   girlfriendId: int("girlfriendId").notNull(),
   title: varchar("title", { length: 200 }).notNull(),
   content: text("content").notNull(),
