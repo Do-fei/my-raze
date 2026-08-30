@@ -61,6 +61,35 @@
 </tr>
 </table>
 
+<p align="center"><sub>写实版</sub></p>
+
+<p align="center"><b>日漫二次元版</b> · 同一人设，另一种画风</p>
+
+<table>
+<tr>
+<td width="25%" align="center" valign="top">
+<img src="docs/characters/char_anime_cute.jpg" alt="桃香 · 可爱风" width="220" /><br/>
+<b>桃香（Momoka）· 可爱风</b><br/>
+<sub>双马尾、草莓牛奶、会撒娇<br/>「きょうも、かわいいって言って？」</sub>
+</td>
+<td width="25%" align="center" valign="top">
+<img src="docs/characters/char_anime_mature.jpg" alt="霧香 · 御姐风" width="220" /><br/>
+<b>霧香（Kirika）· 御姐风</b><br/>
+<sub>低音温柔、把你当大人看<br/>「宿題はもういい。今夜は話を聞く。」</sub>
+</td>
+<td width="25%" align="center" valign="top">
+<img src="docs/characters/char_anime_sporty.jpg" alt="葵 · 体育生" width="220" /><br/>
+<b>葵（Aoi）· 体育生</b><br/>
+<sub>训练完第一件事是给你发自拍<br/>「五キロ走った。ほめて。」</sub>
+</td>
+<td width="25%" align="center" valign="top">
+<img src="docs/characters/char_anime_ol.jpg" alt="美咲 · OL" width="220" /><br/>
+<b>美咲（Misaki）· OL</b><br/>
+<sub>白天开会，晚上只想听你说话<br/>「会議おわり。今日はどうだった？」</sub>
+</td>
+</tr>
+</table>
+
 <p align="center"><sub>参考图锁定角色外貌 → 场景自拍保持一致 → 亲密度越高解锁越多姿势</sub></p>
 
 ---
