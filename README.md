@@ -2,148 +2,188 @@
 
 # My Raze ✨
 
-**Self-hostable AI companion — she remembers you, sends you selfies, and your data never trains anyone's model.**
+**你的 AI 虚拟女友 — 她记得你、给你发自拍、你的对话从不拿去训练模型**
+
+*Self-hostable AI companion · Remembers you · Scene-matched selfies · Your data stays yours*
+
+<br/>
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![tRPC](https://img.shields.io/badge/tRPC-11-2596BE?logo=trpc&logoColor=white)](https://trpc.io/)
-[![Drizzle](https://img.shields.io/badge/Drizzle_ORM-0.44-C5F74F?logo=drizzle&logoColor=black)](https://orm.drizzle.team/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![Tests](https://img.shields.io/badge/Tests-287_passed-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+[快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点) · [为什么选择 My Raze](#-为什么选择-my-raze) · [自托管文档](#-配置说明) · [安全与合规](docs/SAFETY.md)
 
 </div>
 
 ---
 
-My Raze is a full-stack AI companion web app (PWA-installable). Create a
-companion with her own personality, appearance, and interests; chat with
-her over text or voice; ask her for scene-matched selfies generated from
-her reference photo; and build the relationship through a 10-level
-intimacy system.
+> **18+ 仅限成年人使用。** 所有角色均为 AI 生成，并非真人。对话内容不会用于训练任何模型。详见 [`docs/SAFETY.md`](docs/SAFETY.md)。
 
-**18+ only. Companions are AI-generated — not real people. Conversations
-are never used to train models.** The safety protocol (AI disclosure,
-age gate, self-harm crisis referrals) is published in
-[`docs/SAFETY.md`](docs/SAFETY.md).
+## 💫 这是什么？
 
-## Features
+**My Raze** 是一款可自托管的全栈 AI 陪伴 Web 应用（支持 PWA 安装到手机桌面）。
 
-| | |
-|---|---|
-| **Chat** | Any OpenRouter model (default `gpt-4o-mini`), layered prompt system, 6 personality presets |
-| **Selfies** | Scene-matched photos via fal.ai image editing, consistent with her reference photo; manual camera button with a visible daily quota |
-| **Voice** | Browser TTS / ElevenLabs / Fish Audio playback; hold-to-talk input with Whisper transcription |
-| **Relationship** | 10 intimacy levels with server-enforced anti-farming, dynamic mood, proactive in-app notifications |
-| **Multi-companion** | Multiple companions, trash/restore, conversation search, PWA install |
-| **Bring your own keys** | Users can store their own provider keys (encrypted at rest, AES-256-GCM); BYOK traffic bypasses the free-tier daily caps |
+创建一位拥有独特性格、外貌与兴趣的 AI 女友，和她文字或语音聊天；让她根据对话场景，基于参考图生成一致的自拍；通过 **10 级亲密度** 慢慢建立关系——她会记住你的喜好、主动找你、解锁新的互动方式。
 
-## Quick start (Docker)
+一条命令 `docker compose up`，数据、对话、照片全在你自己的服务器上。
+
+---
+
+## ✨ 功能亮点
+
+| | 能力 | 说明 |
+|:--:|------|------|
+| 💬 | **智能对话** | OpenRouter 接入 GPT-4o / Claude / Grok 等 500+ 模型；六套人格模板 + 四层提示词精细控制 |
+| 📸 | **场景自拍** | fal.ai 图生图，保持角色一致；亲密度解锁多种姿势；Pro 支持「合照」 |
+| 🎙️ | **语音互动** | 按住说话 + Whisper 转写；浏览器 / ElevenLabs / Fish Audio 朗读；语音输入后可自动语音回复 |
+| 💕 | **亲密度养成** | 10 级关系、动态心情、升级动画；服务端防刷分，真实互动才有回报 |
+| 🧠 | **长期记忆** | 自动提取事实/偏好/事件，聊天时智能注入；用户可查看、置顶、删除「她记得什么」 |
+| 🔔 | **主动消息** | 记忆感知的站内通知 + Web Push 推送（早安、想你了……） |
+| 👥 | **多角色** | 多个女友自由切换、回收站、历史搜索、自拍画廊 |
+| 🔑 | **BYOK** | 用户自带 API Key（AES-256-GCM 加密存储）；自带 Key 的用户绕过免费额度限制 |
+| 📱 | **移动优先** | 响应式布局、PWA 可安装、手势操作、暗黑模式 |
+
+---
+
+## 🆚 为什么选择 My Raze？
+
+| | 主流 SaaS（Replika / Character.AI 等） | **My Raze** |
+|:--:|:--|:--|
+| 数据归属 | 平台服务器 | **你的 MySQL + 你的磁盘/S3** |
+| 模型选择 | 平台限定 | **OpenRouter 500+ 模型任选** |
+| 自拍一致性 | 有限或额外付费 | **参考图锁定 + 场景匹配生成** |
+| 长期记忆 | 黑盒 | **可编辑、可删除、可审计** |
+| 部署方式 | 只能用官方 App | **`docker compose up` 自托管** |
+| 商业化 | 封闭订阅 | **Free / Plus / Pro 分层 + 自托管模式全解锁** |
+
+> 适合：想拥有自己的 AI 陪伴产品、注重隐私的开发者、以及希望 **BYOK + 自托管** 的高级玩家。
+
+---
+
+## 🚀 快速开始（Docker 一键部署）
 
 ```bash
-git clone <this-repo> && cd my-raze
+git clone https://github.com/Do-fei/my-raze.git && cd my-raze
 cp .env.example .env
-# In .env, set at minimum:
-#   JWT_SECRET             — openssl rand -hex 32
-#   KEY_ENCRYPTION_KEY     — openssl rand -hex 32 (must differ from JWT_SECRET)
-#   OPERATOR_OPENROUTER_KEY — an https://openrouter.ai key (chat)
-#   OPERATOR_FAL_KEY        — an https://fal.ai key (selfies, optional)
-#   RESEND_API_KEY + EMAIL_FROM — magic-link sign-in emails (production)
-
-docker compose up --build
-# → http://localhost:3000
 ```
 
-Database migrations apply automatically on boot. Uploads land in a named
-volume (`STORAGE_DRIVER=local`); switch to S3/R2/MinIO via the `S3_*`
-variables in `.env.example`.
+在 `.env` 中至少配置：
 
-## Local development (no Docker)
+```bash
+JWT_SECRET=$(openssl rand -hex 32)          # 会话签名
+KEY_ENCRYPTION_KEY=$(openssl rand -hex 32)  # BYOK 密钥加密（必须与上面不同）
+OPERATOR_OPENROUTER_KEY=sk-or-...           # 对话（https://openrouter.ai）
+OPERATOR_FAL_KEY=...                        # 自拍（https://fal.ai，可选）
+RESEND_API_KEY=...                          # 登录 magic-link 邮件（生产环境）
+EMAIL_FROM=noreply@yourdomain.com
+```
 
-Requirements: Node 22+, pnpm 10+, MySQL 8 (or MariaDB).
+```bash
+docker compose up --build
+# → 打开 http://localhost:3000，收邮件点链接即可登录
+```
+
+数据库迁移在启动时自动执行；上传文件默认存本地卷，也可切换 S3/R2/MinIO（见 `.env.example`）。
+
+<details>
+<summary><b>本地开发（不用 Docker）</b></summary>
+
+环境：Node 22+ · pnpm 10+ · MySQL 8（或 MariaDB）
 
 ```bash
 pnpm install
-cp .env.example .env        # fill DATABASE_URL + the two secrets
-pnpm db:push                # generate + apply migrations
-pnpm dev                    # http://localhost:3000
+cp .env.example .env
+pnpm db:push
+pnpm dev          # http://localhost:3000
 ```
 
-Sign-in emails need no provider in dev: the magic link is printed to the
-server terminal (Stdout driver). Click it and you're in.
+开发模式下 magic-link 会打印在终端，直接点击即可登录，无需配置邮件服务。
 
 ```bash
-pnpm test                   # vitest (DB-dependent cases need DATABASE_URL)
-pnpm check                  # typecheck
-pnpm build && pnpm start    # production bundle
+pnpm test         # 287 个自动化测试
+pnpm check        # 类型检查
+pnpm build && pnpm start
 ```
 
-## Configuration
+</details>
 
-Everything is documented inline in [`.env.example`](.env.example). The
-short version:
+---
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `DATABASE_URL` | yes | MySQL connection string |
-| `JWT_SECRET`, `KEY_ENCRYPTION_KEY` | yes | session signing / BYOK key encryption (two distinct ≥32-char secrets) |
-| `BETTER_AUTH_URL` | production | public URL of the deployment |
-| `RESEND_API_KEY` or `SMTP_*` + `EMAIL_FROM` | production | magic-link email delivery |
-| `STORAGE_DRIVER` | no | `local` (default) or `s3` |
-| `OPERATOR_OPENROUTER_KEY` | for chat | serves users who don't bring their own key |
-| `OPERATOR_FAL_KEY` / `OPERATOR_OPENAI_KEY` / `OPERATOR_ELEVENLABS_KEY` / `OPERATOR_FISH_AUDIO_KEY` | optional | selfies / Whisper / premium TTS |
+## ⚙️ 配置说明
 
-**Free-tier caps** (per user, per UTC day, server-enforced): 30 chat
-messages, 1 selfie. Users who add their own provider keys in Settings
-bypass the caps. Numbers live in [`shared/quotas.ts`](shared/quotas.ts).
+完整变量说明见 [`.env.example`](.env.example)。核心项：
 
-## Architecture
+| 变量 | 必填 | 用途 |
+|------|:----:|------|
+| `DATABASE_URL` | ✅ | MySQL 连接串 |
+| `JWT_SECRET` / `KEY_ENCRYPTION_KEY` | ✅ | 会话签名 / BYOK 加密（两个不同的 ≥32 字符密钥） |
+| `BETTER_AUTH_URL` | 生产 | 公网访问地址 |
+| `RESEND_API_KEY` 或 `SMTP_*` + `EMAIL_FROM` | 生产 | Magic-link 登录邮件 |
+| `STORAGE_DRIVER` | — | `local`（默认）或 `s3` |
+| `OPERATOR_OPENROUTER_KEY` | 对话 | 为未自带 Key 的用户提供对话能力 |
+| `OPERATOR_FAL_KEY` 等 | 可选 | 自拍 / Whisper / 高级 TTS |
+| `BILLING_PROVIDER` | — | `free`（默认分层配额）/ `lemonsqueezy` / `none`（自托管全解锁） |
+
+**免费层配额**（每用户每 UTC 日，服务端强制）：30 条消息、1 张自拍。Settings 中配置自有 Key 可绕过。详见 [`shared/quotas.ts`](shared/quotas.ts)。
+
+---
+
+## 🏗️ 技术架构
 
 ```
-React 19 + Tailwind 4 + shadcn/ui + wouter  (client/)
-        │  tRPC 11 (superjson) + CSRF double-submit
-Express 4  (server/)
-  ├── Better-Auth: email magic-link sessions   /api/auth/*
-  ├── /files/*: local-disk stream or S3 presigned redirect
-  ├── /healthz /readyz probes
-  └── routers.ts: girlfriend / chat / selfie / voice / tts / apiConfig …
+React 19 + Tailwind 4 + shadcn/ui + wouter     (client/)
+        │  tRPC 11 (superjson) + CSRF 双提交令牌
+Express 4                                       (server/)
+  ├── Better-Auth：邮箱 magic-link 登录
+  ├── /files/*：本地磁盘流式传输 或 S3 预签名跳转
+  ├── /healthz /readyz 健康检查
+  └── 业务路由：女友 / 聊天 / 自拍 / 语音 / 记忆 / 订阅 …
         │
-  MySQL 8 (Drizzle ORM, migrations in drizzle/)
+  MySQL 8（Drizzle ORM，迁移 0001→0018）
   OpenRouter · fal.ai · ElevenLabs · Fish Audio · OpenAI Whisper
 ```
 
-Security posture: ownership-before-write on all conversation writes,
-CSRF double-submit tokens, DOMPurify on model output, per-user
-rate limits + daily meters, BYOK keys encrypted at rest, fail-fast env
-validation, and no third-party fallback for chat — if no key is
-configured the API says so instead of silently routing your messages
-somewhere else.
+**安全基线：** 写操作前校验归属 · CSRF 双提交 · DOMPurify 消毒模型输出 · 按用户限流 + 每日计量 · BYOK 密钥静态加密 · 环境变量启动自检 · 对话无第三方静默回退。
 
-## Project status
+---
 
-Production-capable and fully self-hostable. The app no longer depends on
-any hosted platform — bring a MySQL database, an OpenRouter key, and
-(optionally) a fal.ai key and you can run the whole thing with
-`docker compose up`.
+## 📦 项目状态
 
-Delivered milestones:
+**v4.0 — 生产可用，完全自托管。** 不再依赖任何第三方托管平台。
 
-- **M1 — Standalone MVP.** Email magic-link auth (Better-Auth), local/S3
-  storage, OpenRouter-only AI path, server-side rate limits + daily
-  quotas, Docker packaging with boot self-checks, and the compliance
-  baseline (AI disclosure, 18+ age gate, self-harm crisis protocol).
-- **M2 — Retention engine.** Long-term memory (extraction → relevance
-  injection → a user-editable "what she remembers" page) and
-  memory-aware proactive messages.
-- **M3 — Subscriptions.** Lemon Squeezy billing with Free / Plus / Pro
-  tiers and per-tier quotas; `BILLING_PROVIDER=none` unlocks everything
-  for self-hosters.
-- **M4 — Experience.** Intimacy-unlocked selfie poses, couple photos,
-  a voice-in→voice-out loop, and Web Push for proactive messages.
+| 里程碑 | 内容 |
+|--------|------|
+| **M1** 独立 MVP | Better-Auth 登录 · 本地/S3 存储 · OpenRouter 唯一 AI 路径 · 限流配额 · Docker · 合规三件套 |
+| **M2** 留存引擎 | 长期记忆（提取→注入→用户可编辑）· 记忆感知主动消息 |
+| **M3** 商业化 | Lemon Squeezy 订阅 Free/Plus/Pro · 自托管 `BILLING_PROVIDER=none` 全解锁 |
+| **M4** 体验增强 | 亲密度解锁自拍姿势 · 合照 · 语音往返 · Web Push 真推送 |
 
-287 automated tests; database migrations `0001`→`0018` apply cleanly
-from an empty schema. See [`docs/REFACTORING.md`](docs/REFACTORING.md)
-for the full history and the remaining hardening backlog (data-layer
-foreign keys/indexes, CI, structured logging, full i18n).
+287 个自动化测试 · 空库迁移一键完成 · 重构历程见 [`docs/REFACTORING.md`](docs/REFACTORING.md)
 
-## License
+---
 
-[MIT](LICENSE)
+## 🤝 参与 & 支持
+
+- ⭐ **Star 本仓库** — 支持项目持续迭代
+- 🐛 [提交 Issue](https://github.com/Do-fei/my-raze/issues) — 反馈 Bug 或功能建议
+- 🔀 [提交 PR](https://github.com/Do-fei/my-raze/pulls) — 欢迎贡献代码
+- 📖 重大决策记录在 [`docs/adr/`](docs/adr/)
+
+---
+
+## 📄 许可证
+
+[MIT License](LICENSE) — 自由使用、修改、自托管、二次开发。
+
+---
+
+<div align="center">
+
+**Built with ❤️ by Dawei**
+
+*She remembers you. She sends selfies. Your secrets stay on your server.*
+
+</div>
