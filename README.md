@@ -14,7 +14,7 @@
 [![Tests](https://img.shields.io/badge/Tests-287_passed-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[产品演示](#-产品演示) · [快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点) · [为什么选择 My Raze](#-为什么选择-my-raze) · [自托管文档](#-配置说明)
+[遇见她们](#-遇见她们) · [产品演示](#-产品演示) · [快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点) · [为什么选择 My Raze](#-为什么选择-my-raze)
 
 </div>
 
@@ -29,6 +29,39 @@
 创建一位拥有独特性格、外貌与兴趣的 AI 女友，和她文字或语音聊天；让她根据对话场景，基于参考图生成一致的自拍；通过 **10 级亲密度** 慢慢建立关系——她会记住你的喜好、主动找你、解锁新的互动方式。
 
 一条命令 `docker compose up`，数据、对话、照片全在你自己的服务器上。
+
+---
+
+## 🌸 遇见她们
+
+四位预设人设，风格完全不同——创建时也可以从零自定义外貌、性格和兴趣。她们都是 **AI 生成角色，并非真人**。
+
+<table>
+<tr>
+<td width="25%" align="center" valign="top">
+<img src="docs/characters/char_cute.jpg" alt="小桃 · 可爱风" width="220" /><br/>
+<b>小桃 · 可爱风</b><br/>
+<sub>双马尾、草莓牛奶、会撒娇<br/>「今天也要被夸可爱。」</sub>
+</td>
+<td width="25%" align="center" valign="top">
+<img src="docs/characters/char_mature.jpg" alt="凛 · 御姐风" width="220" /><br/>
+<b>凛 · 御姐风</b><br/>
+<sub>低音温柔、把你当大人看<br/>「先把作业放下。今晚听你说。」</sub>
+</td>
+<td width="25%" align="center" valign="top">
+<img src="docs/characters/char_sporty.jpg" alt="夏未 · 体育生" width="220" /><br/>
+<b>夏未 · 体育生</b><br/>
+<sub>训练完第一件事是给你发自拍<br/>「跑完了。夸我。」</sub>
+</td>
+<td width="25%" align="center" valign="top">
+<img src="docs/characters/char_ol.jpg" alt="苏晚 · OL" width="220" /><br/>
+<b>苏晚 · OL</b><br/>
+<sub>白天开会，晚上只想听你说话<br/>「会议刚散。你今天怎么样？」</sub>
+</td>
+</tr>
+</table>
+
+<p align="center"><sub>参考图锁定角色外貌 → 场景自拍保持一致 → 亲密度越高解锁越多姿势</sub></p>
 
 ---
 
