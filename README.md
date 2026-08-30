@@ -14,7 +14,7 @@
 [![Tests](https://img.shields.io/badge/Tests-287_passed-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点) · [为什么选择 My Raze](#-为什么选择-my-raze) · [自托管文档](#-配置说明) · [安全与合规](docs/SAFETY.md)
+[产品演示](#-产品演示) · [快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点) · [为什么选择 My Raze](#-为什么选择-my-raze) · [自托管文档](#-配置说明)
 
 </div>
 
@@ -29,6 +29,67 @@
 创建一位拥有独特性格、外貌与兴趣的 AI 女友，和她文字或语音聊天；让她根据对话场景，基于参考图生成一致的自拍；通过 **10 级亲密度** 慢慢建立关系——她会记住你的喜好、主动找你、解锁新的互动方式。
 
 一条命令 `docker compose up`，数据、对话、照片全在你自己的服务器上。
+
+---
+
+## 🎬 产品演示
+
+<div align="center">
+
+**从认识到暧昧 — 聊天、亲密度、记忆，一个界面搞定**
+
+<img src="docs/screenshots/demo_flow.gif" alt="My Raze 演示：首页 → 聊天 → 亲密度面板 → 记忆管理" width="920" />
+
+*首页女友卡片 → 对话界面 → Lv.5 亲密度详情 → 「她记得你的事」*
+
+</div>
+
+<br/>
+
+<table>
+<tr>
+<td width="50%" align="center">
+<b>💬 智能对话 + 场景自拍</b><br/>
+<img src="docs/screenshots/demo_chat.png" alt="聊天界面：Lv.5 亲密度、相机按钮、每日自拍额度" width="440" /><br/>
+<sub>相机按钮一键拍照 · 额度徽章清晰可见 · AI 身份始终披露</sub>
+</td>
+<td width="50%" align="center">
+<b>💕 10 级亲密度养成</b><br/>
+<img src="docs/screenshots/demo_intimacy.png" alt="亲密度面板：等级、经验值、已解锁姿势" width="440" /><br/>
+<sub>暧昧期解锁更多自拍姿势 · 专属称呼 · 升级进度一目了然</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" align="center">
+<b>🧠 可编辑的长期记忆</b><br/>
+<img src="docs/screenshots/demo_memories.png" alt="记忆管理：偏好、事实、事件分类展示" width="440" /><br/>
+<sub>自动提取 · 分类管理 · 置顶/删除 · 亲密度越高容量越大</sub>
+</td>
+<td width="50%" align="center">
+<b>🏠 女友卡片 + 一键开聊</b><br/>
+<img src="docs/screenshots/demo_home.png" alt="首页：Raze 女友卡片、Lv.5、心情与今日消息" width="440" /><br/>
+<sub>多女友切换 · 自拍画廊 · BYOK 设置 · PWA 可装手机桌面</sub>
+</td>
+</tr>
+</table>
+
+<details>
+<summary><b>登录页 & 欢迎页</b></summary>
+
+<table>
+<tr>
+<td width="50%" align="center">
+<img src="docs/screenshots/demo_login.png" alt="Magic-link 登录页" width="400" /><br/>
+<sub>邮箱 Magic-link · 无需密码 · 合规声明内置</sub>
+</td>
+<td width="50%" align="center">
+<img src="docs/screenshots/demo_welcome.png" alt="未登录欢迎页" width="400" /><br/>
+<sub>四大核心能力一览 · 移动端适配 · 暗黑模式</sub>
+</td>
+</tr>
+</table>
+
+</details>
 
 ---
 
