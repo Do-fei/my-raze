@@ -6,7 +6,8 @@ type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(userId = 1): { ctx: TrpcContext } {
   const user: AuthenticatedUser = {
-    id: userId,
+    // users.id is varchar(255) since the Better-Auth migration (0013).
+    id: String(userId),
     openId: `test-user-${userId}`,
     email: `test${userId}@example.com`,
     name: "Test User",
@@ -39,7 +40,7 @@ describe("girlfriend.ensureDefault", () => {
     expect(result).toBeDefined();
     expect(result.name).toBe("Raze");
     expect(result.personality).toContain("活泼开朗");
-    expect(result.userId).toBe(88888);
+    expect(result.userId).toBe("88888");
     expect(result.isActive).toBe(true);
   });
 

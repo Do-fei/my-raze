@@ -6,7 +6,7 @@ type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(): { ctx: TrpcContext } {
   const user: AuthenticatedUser = {
-    id: 1,
+    id: "test-user-1",
     openId: "test-user",
     email: "test@example.com",
     name: "Test User",
@@ -69,7 +69,7 @@ describe("girlfriend.getActive", () => {
   it("should return active girlfriend for authenticated user", async () => {
     // 使用唯一用户 ID 避免数据污染
     const { ctx } = createAuthContext();
-    ctx.user!.id = 88888;
+    ctx.user!.id = "test-user-88888";
     ctx.user!.openId = "test-getactive-user";
     const caller = appRouter.createCaller(ctx);
 
@@ -92,7 +92,7 @@ describe("girlfriend.getActive", () => {
   it("should return null when no girlfriend exists", async () => {
     const { ctx } = createAuthContext();
     // 使用不同的用户 ID 确保没有女友配置
-    ctx.user!.id = 999999;
+    ctx.user!.id = "test-user-999999";
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.girlfriend.getActive();

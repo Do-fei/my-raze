@@ -1,8 +1,8 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { AgeGate } from "@/components/AgeGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import {
   Heart,
@@ -370,10 +370,16 @@ export default function Home() {
             </Card>
           </div>
 
-          <Button size="lg" className="w-full text-base" onClick={() => (window.location.href = getLoginUrl())}>
+          <Button size="lg" className="w-full text-base" onClick={() => (window.location.href = "/login")}>
             <Heart className="w-5 h-5 mr-2" />
             立即开始
           </Button>
+
+          {/* M1-6 合规披露 */}
+          <p className="text-xs text-muted-foreground">
+            18+ only · Companions are AI-generated, not real people ·
+            我们不会用你的聊天内容训练任何模型
+          </p>
         </div>
       </div>
     );
@@ -382,6 +388,8 @@ export default function Home() {
   // 已登录 - 女友列表
   return (
     <div className="min-h-screen bg-background">
+      {/* M1-6：一次性 18+ 年龄确认（服务端同样强制） */}
+      <AgeGate />
       {/* 顶部导航栏 */}
       <header className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b bg-card sticky top-0 z-10" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
         <div className="flex items-center gap-2">

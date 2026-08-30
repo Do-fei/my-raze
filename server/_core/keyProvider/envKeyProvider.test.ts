@@ -70,14 +70,14 @@ describe("EnvKeyProvider — user-scoped fallback to operator", () => {
     // Force getDb to return null (the test-mode silent path).
     vi.spyOn(dbModule, "getDb").mockResolvedValue(null as any);
     const kp = new EnvKeyProvider();
-    expect(await kp.get({ userId: 42 }, "fal")).toBe("fal-operator-fallback");
+    expect(await kp.get({ userId: "test-user-42" }, "fal")).toBe("fal-operator-fallback");
   });
 
   it("returns null when neither user key nor operator key is set", async () => {
     delete process.env.OPERATOR_FAL_KEY;
     vi.spyOn(dbModule, "getDb").mockResolvedValue(null as any);
     const kp = new EnvKeyProvider();
-    expect(await kp.get({ userId: 1 }, "fal")).toBeNull();
+    expect(await kp.get({ userId: "test-user-1" }, "fal")).toBeNull();
   });
 });
 
@@ -85,7 +85,7 @@ describe("EnvKeyProvider — describeUserKeys (no DB)", () => {
   it("returns isSet:false for every known key when DB is unavailable", async () => {
     vi.spyOn(dbModule, "getDb").mockResolvedValue(null as any);
     const kp = new EnvKeyProvider();
-    const desc = await kp.describeUserKeys(1);
+    const desc = await kp.describeUserKeys("test-user-1");
     expect(desc.openrouter.isSet).toBe(false);
     expect(desc.fal.isSet).toBe(false);
     expect(desc.elevenlabs.isSet).toBe(false);

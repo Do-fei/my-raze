@@ -1,10 +1,13 @@
-const CACHE_NAME = 'my-raze-v1';
+// v2 (M4-4): fixed icon filenames (issue #34 — the old list referenced
+// /icon-192x192.png which never existed, so cache.addAll rejected and the
+// service worker never installed), added Web Push handlers.
+const CACHE_NAME = 'my-raze-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
   '/apple-touch-icon.png',
-  '/icon-192x192.png',
-  '/icon-512x512.png',
+  '/icon-192.png',
+  '/icon-512.png',
 ];
 
 // Install - cache static assets
@@ -90,5 +93,39 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => caches.match(request))
+  );
+});
+
+// Web Push (M4-4) — payload: { title, body, url? }
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: 'My Raze', body: event.data ? event.data.text() : '' };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'My Raze', {
+      body: data.body || '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      data: { url: data.url || '/' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if ('focus' in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return clients.openWindow(url);
+    })
   );
 });

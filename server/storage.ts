@@ -1,102 +1,156 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+/**
+ * Object storage with pluggable drivers (M1-2, replaces the Manus Forge
+ * storage proxy).
+ *
+ * Drivers, selected by `STORAGE_DRIVER`:
+ *   - `local` (default): files land on disk under `STORAGE_LOCAL_DIR`.
+ *     Suitable for self-hosting and dev.
+ *   - `s3`: AWS S3 or any S3-compatible endpoint (R2, MinIO) via
+ *     `S3_BUCKET` / `S3_REGION` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`
+ *     / optional `S3_ENDPOINT`.
+ *
+ * Both drivers return the same *stable* public URL shape:
+ *   `${PUBLIC_URL}/files/<key>`
+ * The `/files` route (server/_core/files.ts) streams from disk or
+ * redirects to a short-lived presigned S3 URL. Persisting the stable URL
+ * in the DB means the storage backend can change without a data
+ * migration, and private S3 buckets work because presigning happens at
+ * read time.
+ *
+ * Keys embed a nanoid, so URLs are unguessable. Per-user read ACLs and
+ * signed app-level URLs are tracked separately (issue #12).
+ */
 
-import { ENV } from './_core/env';
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createReadStream, existsSync } from "node:fs";
+import path from "node:path";
+import { ENV } from "./_core/env";
 
-type StorageConfig = { baseUrl: string; apiKey: string };
-
-function getStorageConfig(): StorageConfig {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-
-  if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
-  }
-
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
-}
-
-function buildUploadUrl(baseUrl: string, relKey: string): URL {
-  const url = new URL("v1/storage/upload", ensureTrailingSlash(baseUrl));
-  url.searchParams.set("path", normalizeKey(relKey));
-  return url;
-}
-
-async function buildDownloadUrl(
-  baseUrl: string,
-  relKey: string,
-  apiKey: string
-): Promise<string> {
-  const downloadApiUrl = new URL(
-    "v1/storage/downloadUrl",
-    ensureTrailingSlash(baseUrl)
-  );
-  downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
-  const response = await fetch(downloadApiUrl, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
-  });
-  return (await response.json()).url;
-}
-
-function ensureTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`;
-}
+export type StoragePutResult = { key: string; url: string };
 
 function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
+  const key = relKey.replace(/^\/+/, "");
+  // Defense against path traversal for the local driver; S3 treats keys
+  // as opaque but there's no reason to allow these anywhere.
+  if (key.includes("..") || path.isAbsolute(key)) {
+    throw new Error(`Invalid storage key: ${relKey}`);
+  }
+  return key;
 }
 
-function toFormData(
+function publicFileUrl(key: string): string {
+  return `${ENV.publicUrl.replace(/\/+$/, "")}/files/${key}`;
+}
+
+// ---------------------------------------------------------------------------
+// Local disk driver
+// ---------------------------------------------------------------------------
+
+function localPathFor(key: string): string {
+  return path.join(ENV.storageLocalDir, key);
+}
+
+async function localPut(
+  key: string,
   data: Buffer | Uint8Array | string,
-  contentType: string,
-  fileName: string
-): FormData {
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
-  const form = new FormData();
-  form.append("file", blob, fileName || "file");
-  return form;
+  _contentType: string
+): Promise<StoragePutResult> {
+  const filePath = localPathFor(key);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, data);
+  return { key, url: publicFileUrl(key) };
 }
 
-function buildAuthHeaders(apiKey: string): HeadersInit {
-  return { Authorization: `Bearer ${apiKey}` };
+/** Used by the /files route. Returns null when the file doesn't exist. */
+export function localFileStream(relKey: string) {
+  const key = normalizeKey(relKey);
+  const filePath = localPathFor(key);
+  if (!existsSync(filePath)) return null;
+  return createReadStream(filePath);
 }
+
+/** Test helper / internal reads. */
+export async function localFileRead(relKey: string): Promise<Buffer> {
+  return readFile(localPathFor(normalizeKey(relKey)));
+}
+
+// ---------------------------------------------------------------------------
+// S3 driver (lazy client so the SDK isn't constructed unless configured)
+// ---------------------------------------------------------------------------
+
+type S3Module = typeof import("@aws-sdk/client-s3");
+let s3Client: import("@aws-sdk/client-s3").S3Client | null = null;
+let s3Module: S3Module | null = null;
+
+async function getS3(): Promise<{ client: NonNullable<typeof s3Client>; mod: S3Module }> {
+  if (!s3Client || !s3Module) {
+    s3Module = await import("@aws-sdk/client-s3");
+    s3Client = new s3Module.S3Client({
+      region: ENV.s3Region,
+      ...(ENV.s3Endpoint ? { endpoint: ENV.s3Endpoint, forcePathStyle: true } : {}),
+      ...(ENV.s3AccessKeyId
+        ? {
+            credentials: {
+              accessKeyId: ENV.s3AccessKeyId,
+              secretAccessKey: ENV.s3SecretAccessKey,
+            },
+          }
+        : {}),
+    });
+  }
+  return { client: s3Client, mod: s3Module };
+}
+
+async function s3Put(
+  key: string,
+  data: Buffer | Uint8Array | string,
+  contentType: string
+): Promise<StoragePutResult> {
+  const { client, mod } = await getS3();
+  const body = typeof data === "string" ? Buffer.from(data) : data;
+  await client.send(
+    new mod.PutObjectCommand({
+      Bucket: ENV.s3Bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    })
+  );
+  return { key, url: publicFileUrl(key) };
+}
+
+/** Used by the /files route: presign a short-lived GET for a private bucket. */
+export async function s3PresignedGetUrl(relKey: string): Promise<string> {
+  const key = normalizeKey(relKey);
+  const { client, mod } = await getS3();
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  return getSignedUrl(
+    client,
+    new mod.GetObjectCommand({ Bucket: ENV.s3Bucket, Key: key }),
+    { expiresIn: 300 }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Public API (same shape the rest of the app already uses)
+// ---------------------------------------------------------------------------
 
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
-): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
+): Promise<StoragePutResult> {
   const key = normalizeKey(relKey);
-  const uploadUrl = buildUploadUrl(baseUrl, key);
-  const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: buildAuthHeaders(apiKey),
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const message = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Storage upload failed (${response.status} ${response.statusText}): ${message}`
-    );
+  if (ENV.storageDriver === "s3") {
+    return s3Put(key, data, contentType);
   }
-  const url = (await response.json()).url;
-  return { key, url };
+  return localPut(key, data, contentType);
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
-  const { baseUrl, apiKey } = getStorageConfig();
+export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
-  return {
-    key,
-    url: await buildDownloadUrl(baseUrl, key, apiKey),
-  };
+  if (ENV.storageDriver === "s3") {
+    return { key, url: await s3PresignedGetUrl(key) };
+  }
+  return { key, url: publicFileUrl(key) };
 }

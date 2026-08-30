@@ -6,12 +6,14 @@ type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(): { ctx: TrpcContext } {
   const user: AuthenticatedUser = {
-    id: 1,
+    id: "test-user-1",
     openId: "voice-test-user",
     email: "voice@example.com",
     name: "Voice Test User",
     loginMethod: "manus",
     role: "user",
+    // M1-6: AI routes require a confirmed 18+ birth date.
+    birthDate: new Date("1990-01-01"),
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
+import { createMessage } from "./db";
 import type { TrpcContext } from "./_core/context";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(userId = 1): { ctx: TrpcContext } {
   const user: AuthenticatedUser = {
-    id: userId,
+    // users.id is varchar(255) since the Better-Auth migration (0013).
+    id: String(userId),
     openId: `test-user-${userId}`,
     email: `test${userId}@example.com`,
     name: "Test User",
@@ -43,9 +45,11 @@ describe("conversation.search", () => {
       title: "搜索测试对话",
     });
 
-    // 发送一条包含特定关键词的消息
-    await caller.chat.sendMessage({
+    // 直接写入一条包含特定关键词的消息（不走 chat.sendMessage —
+    // M1-3 起该路径要求配置 OpenRouter key，且测试不应触网）
+    await createMessage({
       conversationId: convo.id,
+      role: "user",
       content: "今天天气真好，我们去公园散步吧",
     });
 
@@ -92,7 +96,7 @@ describe("mood system", () => {
     });
 
     expect(result).toBeDefined();
-    expect(result.userId).toBe(44401);
+    expect(result.userId).toBe("44401");
     expect(result.girlfriendId).toBe(gf.id);
     expect(result.moodScore).toBeGreaterThanOrEqual(70); // 积极消息应该维持或提高分数
     expect(result.totalMessages).toBeGreaterThanOrEqual(1);
@@ -134,7 +138,7 @@ describe("mood system", () => {
     const mood = await caller.mood.get({ girlfriendId: gf.id });
 
     expect(mood).toBeDefined();
-    expect(mood?.userId).toBe(44401);
+    expect(mood?.userId).toBe("44401");
     expect(mood?.girlfriendId).toBe(gf.id);
     expect(mood?.mood).toBeDefined();
     expect(mood?.moodScore).toBeGreaterThanOrEqual(0);

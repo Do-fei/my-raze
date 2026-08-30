@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { COOKIE_NAME } from "../shared/const";
 import type { TrpcContext } from "./_core/context";
 
 type CookieCall = {
@@ -14,7 +13,7 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
   const clearedCookies: CookieCall[] = [];
 
   const user: AuthenticatedUser = {
-    id: 1,
+    id: "test-user-1",
     openId: "sample-user",
     email: "sample@example.com",
     name: "Sample User",
@@ -42,19 +41,19 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
 }
 
 describe("auth.logout", () => {
-  it("clears the session cookie and reports success", async () => {
+  it("clears Better-Auth session cookies + the legacy v3 cookie", async () => {
     const { ctx, clearedCookies } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.auth.logout();
 
     expect(result).toEqual({ success: true });
-    expect(clearedCookies).toHaveLength(1);
-    expect(clearedCookies[0]?.name).toBe(COOKIE_NAME);
-    // Phase 1a-ii (issue #8) changed the session cookie's sameSite from
-    // "none" to "lax" as part of CSRF hardening. Logout's clearCookie
-    // call must use the same options, otherwise browsers won't recognize
-    // the clear and the cookie lingers.
+    expect(clearedCookies).toHaveLength(3);
+    expect(clearedCookies.map(c => c.name)).toEqual([
+      "better-auth.session_token",
+      "better-auth.session_data",
+      "app_session_id",
+    ]);
     expect(clearedCookies[0]?.options).toMatchObject({
       maxAge: -1,
       secure: true,

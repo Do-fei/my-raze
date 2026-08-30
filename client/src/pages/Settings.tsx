@@ -14,6 +14,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
+import { BillingCard } from "@/components/BillingCard";
+import { PushCard } from "@/components/PushCard";
 
 type ModelInfo = {
   id: string;
@@ -562,6 +564,12 @@ export default function Settings() {
           </div>
         ) : (
           <>
+            {/* ========== 订阅与用量（M3） ========== */}
+            <BillingCard />
+
+            {/* ========== 推送通知（M4-4） ========== */}
+            <PushCard />
+
             {/* ========== 语音设置 ========== */}
             <Card>
               <CardHeader>
@@ -1006,92 +1014,38 @@ export default function Settings() {
                   语音转写 API 配置
                 </CardTitle>
                 <CardDescription>
-                  配置语音消息转文字服务，选择 Manus 内置服务或 OpenAI Whisper API
+                  语音消息通过 OpenAI Whisper 转写。默认使用运营方的密钥（按套餐额度），
+                  也可以在下方填入自己的 Key（BYOK，走你自己的账户、不占额度）。
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* 提供商选择 */}
+                {/* OpenAI API Key（可选，BYOK） */}
                 <div className="space-y-2">
-                  <Label>语音转写提供商</Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      className={`p-4 rounded-lg border-2 transition-all ${
-                        whisperProvider === "manus"
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:border-primary/50"
-                      }`}
-                      onClick={() => {
-                        setWhisperProvider("manus");
-                        setHasUnsavedWhisperChanges(true);
-                      }}
+                  <Label htmlFor="whisperApiKey">OpenAI API Key（可选）</Label>
+                  <Input
+                    id="whisperApiKey"
+                    type="password"
+                    placeholder="留空则使用运营方密钥；或填入你的 sk-..."
+                    value={whisperApiKey}
+                    onChange={(e) => {
+                      setWhisperApiKey(e.target.value);
+                      setWhisperProvider("openai");
+                      setHasUnsavedWhisperChanges(true);
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    获取 API Key：
+                    <a
+                      href="https://platform.openai.com/api-keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline ml-1 inline-flex items-center gap-1"
                     >
-                      <div className="flex flex-col items-center gap-2">
-                        <Sparkles className="w-6 h-6" />
-                        <span className="font-medium">Manus 内置</span>
-                        <span className="text-xs text-muted-foreground text-center">
-                          开箱即用，无需配置
-                        </span>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className={`p-4 rounded-lg border-2 transition-all ${
-                        whisperProvider === "openai"
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:border-primary/50"
-                      }`}
-                      onClick={() => {
-                        setWhisperProvider("openai");
-                        setHasUnsavedWhisperChanges(true);
-                      }}
-                    >
-                      <div className="flex flex-col items-center gap-2">
-                        <Zap className="w-6 h-6" />
-                        <span className="font-medium">OpenAI Whisper</span>
-                        <span className="text-xs text-muted-foreground text-center">
-                          需要 API Key，价格低廉
-                        </span>
-                      </div>
-                    </button>
-                  </div>
+                      platform.openai.com <ExternalLink className="w-3 h-3" />
+                    </a>
+                    ，价格：$0.006/分钟（约 ￥0.04/分钟）
+                  </p>
                 </div>
-
-                {/* OpenAI API Key 输入 */}
-                {whisperProvider === "openai" && (
-                  <div className="space-y-2 pt-2 border-t">
-                    <Label htmlFor="whisperApiKey">OpenAI API Key</Label>
-                    <Input
-                      id="whisperApiKey"
-                      type="password"
-                      placeholder="输入你的 OpenAI API Key (sk-...)" 
-                      value={whisperApiKey}
-                      onChange={(e) => {
-                        setWhisperApiKey(e.target.value);
-                        setHasUnsavedWhisperChanges(true);
-                      }}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      获取 API Key：
-                      <a
-                        href="https://platform.openai.com/api-keys"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline ml-1 inline-flex items-center gap-1"
-                      >
-                        platform.openai.com <ExternalLink className="w-3 h-3" />
-                      </a>
-                      ，价格：$0.006/分钟（约 ￥0.04/分钟）
-                    </p>
-                  </div>
-                )}
-
-                {/* Manus 内置服务说明 */}
-                {whisperProvider === "manus" && (
-                  <div className="p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
-                    <p>使用 Manus 平台内置的语音转写服务，无需额外配置。费用计入你的 Manus 订阅额度中。</p>
-                  </div>
-                )}
 
                 {/* 保存按钮 */}
                 <div className="pt-2">
@@ -1266,7 +1220,8 @@ export default function Settings() {
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    如果不填写，将使用内置的免费 LLM API（Gemini 2.5 Flash）
+                    留空则使用运营方的 OpenRouter 密钥（按套餐额度，免费档锁定 gpt-4o-mini）。
+                    填入自己的 Key 后走你自己的账户、不占额度，并可自由选择模型。
                   </p>
                 </div>
 
@@ -1866,10 +1821,10 @@ export default function Settings() {
                   <strong>1. 语音功能：</strong>三种引擎可选 — 浏览器内置（免费）、ElevenLabs（高品质）、Fish Audio（中文优化）
                 </p>
                 <p>
-                  <strong>2. fal.ai API Key：</strong>必填（用于生成自拍照片），成本约 $0.022/张
+                  <strong>2. fal.ai API Key：</strong>可选（用于生成自拍），留空则使用运营方密钥，成本约 $0.022/张
                 </p>
                 <p>
-                  <strong>3. OpenRouter API Key：</strong>可选，如果不填写将使用内置免费 API
+                  <strong>3. OpenRouter API Key：</strong>可选，留空则使用运营方密钥（按套餐额度）
                 </p>
                 <p>
                   <strong>4. 语音引擎对比：</strong>

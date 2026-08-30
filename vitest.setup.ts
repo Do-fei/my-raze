@@ -19,3 +19,12 @@ process.env.NODE_ENV ??= "test";
 // silent-no-op path — the same path the v3.0 test suite was implicitly
 // relying on. Phase 4 will move tests to testcontainers and remove this
 // carve-out (see issue #27).
+
+// Storage (M1-2): tests exercise real uploads (avatar / girlfriend.create),
+// so point the local driver at a per-run temp dir.
+process.env.STORAGE_DRIVER ??= "local";
+process.env.STORAGE_LOCAL_DIR ??= `/tmp/my-raze-test-uploads-${process.pid}`;
+
+// Billing (M3): functional tests run in self-host mode so tier gates
+// don't entangle unrelated suites. billing.test.ts sets modes per case.
+process.env.BILLING_PROVIDER ??= "none";

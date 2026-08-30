@@ -11,10 +11,11 @@ import {
   createGirlfriend,
 } from "./db";
 
-// Use unique userId to avoid conflicts with other tests
-const TEST_USER_ID = 99900;
-const TEST_USER_ID_2 = 99901;
-const TEST_USER_ID_3 = 99902;
+// Use unique userIds to avoid conflicts with other tests.
+// users.id is varchar(255) since the Better-Auth migration (0013).
+const TEST_USER_ID = "test-user-99900";
+const TEST_USER_ID_2 = "test-user-99901";
+const TEST_USER_ID_3 = "test-user-99902";
 
 describe("Soft Delete (Trash)", () => {
   it("should soft delete a girlfriend and hide from list", async () => {

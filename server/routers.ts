@@ -1,4 +1,3 @@
-import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import {
   keyProvider,
@@ -46,45 +45,119 @@ import {
   checkAndCreateProactiveNotification,
   getIntimacyInfo,
   addIntimacyPoints,
+  setUserBirthDate,
 } from "./db";
+import { detectSelfHarm, SAFETY_SYSTEM_CLAUSE } from "../shared/safety";
+import {
+  buildMemoryPromptBlock,
+  maybeExtractMemories,
+  listMemories,
+  deleteMemory,
+  setMemoryPinned,
+} from "./memory";
 import { DEFAULT_GIRLFRIEND } from "../shared/defaultGirlfriend";
 import { POINTS_RULES, DAILY_POINTS_LIMIT, getLevelByPoints, getLevelInfo, getNextLevel, getLevelProgress, getPointsToNextLevel } from "../shared/intimacy";
+import { FREE_TIER_DEFAULT_MODEL, METERS, TIER_LIMITS } from "../shared/quotas";
+import {
+  getBillingMode,
+  getCheckoutUrls,
+  getSubscription,
+  getTierLimits,
+  isBillingEnforced,
+  upsellHint,
+} from "./billing";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
-import { invokeLLM } from "./_core/llm";
+import {
+  checkRateLimit,
+  consumeDailyMeter,
+  consumeMonthlyMeter,
+  tryConsumeDailyMeter,
+  getDailyMeter,
+  getMonthlyMeter,
+  isOnCooldown,
+  markCooldown,
+} from "./_core/quota";
 import { buildSmartPrompt } from "./promptTemplates";
+import { getPose } from "../shared/selfiePoses";
+import {
+  getVapidPublicKey,
+  savePushSubscription,
+  removePushSubscription,
+  hasPushSubscription,
+  sendPushToUser,
+} from "./push";
 import axios from "axios";
-import { transcribeAudio } from "./_core/voiceTranscription";
 import { transcribeWithOpenAI } from "./_core/openaiWhisper";
 
-// 判断是否应该生成自拍的辅助函数
-function shouldGenerateSelfieFromText(aiResponse: string, userMessage: string): boolean {
-  const selfieKeywords = [
-    "照片",
-    "自拍",
-    "看看",
-    "发张",
-    "发个",
-    "拍一张",
-    "拍个",
-    "穿",
-    "在哪",
-    "在干嘛",
-    "在做什么",
-    "现在",
-  ];
+// M1-4 / issue #41：关键词自动触发自拍已删除。旧实现里「现在 / 在哪 / 穿」
+// 这类高频词就会触发一次付费出图，误触率极高。自拍改为仅由聊天页的
+// 相机按钮显式触发（selfie.generate），按钮上显示今日剩余额度。
 
-  const combinedText = (aiResponse + " " + userMessage).toLowerCase();
-  return selfieKeywords.some((keyword) => combinedText.includes(keyword));
+// M1-6 年龄门（18+）：产品定位成人陪伴，AI 路由在用户确认年龄前拒绝
+// 服务。birthDate 在 auth.confirmAge 里做服务端 18+ 校验后写入。
+function ensureAgeConfirmed(user: { birthDate: Date | string | null }) {
+  if (!user.birthDate) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "AGE_CONFIRMATION_REQUIRED",
+    });
+  }
+}
+
+function yearsSince(date: Date): number {
+  const now = new Date();
+  let years = now.getUTCFullYear() - date.getUTCFullYear();
+  const monthDiff = now.getUTCMonth() - date.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < date.getUTCDate())) {
+    years -= 1;
+  }
+  return years;
 }
 
 export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+
+    // M1-6: one-time 18+ confirmation. Validated server-side; the date
+    // itself is only used to prove majority (SB 243 baseline).
+    confirmAge: protectedProcedure
+      .input(
+        z.object({
+          birthDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const birthDate = new Date(`${input.birthDate}T00:00:00Z`);
+        if (Number.isNaN(birthDate.getTime()) || birthDate > new Date()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Please enter a valid date of birth.",
+          });
+        }
+        if (yearsSince(birthDate) < 18) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "My Raze is an 18+ service. You must be at least 18 years old to use it.",
+          });
+        }
+        await setUserBirthDate(ctx.user.id, birthDate);
+        return { ok: true as const };
+      }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
+      // Defense-in-depth — Better-Auth's own /api/auth/sign-out is the
+      // primary signout path; this clears the same cookies for clients
+      // that hit tRPC directly. See ADR 0006.
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie("better-auth.session_token", { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie("better-auth.session_data", { ...cookieOptions, maxAge: -1 });
+      // Also clear the legacy v3 cookie if any client still has it.
+      ctx.res.clearCookie("app_session_id", { ...cookieOptions, maxAge: -1 });
       return {
         success: true,
       } as const;
@@ -106,7 +179,22 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        // 上传参考图片到 S3
+        // 档位上限（M3 / ADR 0005）：Free 1 个、Plus 3 个、Pro 不限。
+        // 自托管（BILLING_PROVIDER=none）不限。
+        if (isBillingEnforced()) {
+          const gfTier = await getTierLimits(ctx.user.id);
+          if (gfTier.limits.maxGirlfriends !== null) {
+            const existing = await getUserGirlfriends(ctx.user.id);
+            if (existing.length >= gfTier.limits.maxGirlfriends) {
+              throw new TRPCError({
+                code: "FORBIDDEN",
+                message: `UPGRADE_REQUIRED: Your plan allows ${gfTier.limits.maxGirlfriends} companion${gfTier.limits.maxGirlfriends > 1 ? "s" : ""}. Upgrade in Settings to create more.`,
+              });
+            }
+          }
+        }
+
+        // 上传参考图片到存储
         const imageBuffer = Buffer.from(input.referenceImageBase64, "base64");
         const fileKey = `girlfriend-${ctx.user.id}-${nanoid()}.${input.referenceImageMimeType.split("/")[1]}`;
 
@@ -287,6 +375,36 @@ export const appRouter = router({
         const rule = POINTS_RULES[input.reason];
         if (!rule) throw new TRPCError({ code: "BAD_REQUEST", message: "无效的经验值类型" });
 
+        // 服务端防刷分（M1-3 / issue #5）：冷却与每日上限过去只由前端
+        // "自觉"遵守，直连 tRPC 即可绕过。现在由服务端强制，超限时静默
+        // 返回 0 分（不报错——加分是聊天的副作用，不该打断主流程）。
+        const skipped = (reason: string) => ({
+          intimacyLevel: 0,
+          intimacyPoints: 0,
+          previousLevel: 0,
+          leveledUp: false,
+          consecutiveDays: 0,
+          pointsAdded: 0,
+          skipped: true,
+          skipReason: reason,
+        });
+
+        if (rule.cooldownMinutes) {
+          if (isOnCooldown(ctx.user.id, input.reason, rule.cooldownMinutes)) {
+            return skipped("冷却中，稍后再获得经验值");
+          }
+        }
+        if (rule.dailyLimit) {
+          const perReason = await tryConsumeDailyMeter(
+            ctx.user.id,
+            METERS.intimacyReason(input.reason),
+            rule.dailyLimit
+          );
+          if (!perReason.allowed) {
+            return skipped("该行为今日经验值已达上限");
+          }
+        }
+
         // 计算基础经验值
         let points = rule.basePoints;
 
@@ -314,17 +432,20 @@ export const appRouter = router({
 
         // 过滤过短消息（< 5 字不计算）
         if (input.reason === "text_message" && input.messageLength && input.messageLength < 5) {
-          return {
-            intimacyLevel: 0,
-            intimacyPoints: 0,
-            previousLevel: 0,
-            leveledUp: false,
-            consecutiveDays: 0,
-            pointsAdded: 0,
-            skipped: true,
-            skipReason: "消息过短，不计算经验值",
-          };
+          return skipped("消息过短，不计算经验值");
         }
+
+        // 每日总经验值上限（DAILY_POINTS_LIMIT），按实际分值消耗。
+        const total = await tryConsumeDailyMeter(
+          ctx.user.id,
+          METERS.intimacyPoints,
+          DAILY_POINTS_LIMIT,
+          points
+        );
+        if (!total.allowed) {
+          return skipped("今日经验值总量已达上限");
+        }
+        markCooldown(ctx.user.id, input.reason);
 
         const result = await addIntimacyPoints(
           input.girlfriendId,
@@ -401,6 +522,24 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        // 0. 年龄门（M1-6）+ 服务端限流（issue #5）。
+        ensureAgeConfirmed(ctx.user);
+        checkRateLimit(ctx.user.id, "chat");
+
+        // 0b. 提前解析 LLM 密钥（M1-3）：BYOK → 运营方 key。缺 key 要在
+        // 任何写入/扣配额之前失败，避免半截对话和白烧额度。
+        const openRouterKey = await keyProvider.get(
+          { userId: ctx.user.id },
+          "openrouter"
+        );
+        if (!openRouterKey) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Chat is not configured yet: no OpenRouter key available. Set OPERATOR_OPENROUTER_KEY on the server, or add your own key in Settings.",
+          });
+        }
+
         // 1. 验证对话所有权（必须在写入前完成 — 见 issue #4）
         // 之前的实现顺序是 createMessage → getConversation，这意味着任何登录用户
         // 传一个别人的 conversationId 也能成功 INSERT 一条 user message 进对方对话。
@@ -418,6 +557,22 @@ export const appRouter = router({
             code: "NOT_FOUND",
             message: "No active girlfriend found",
           });
+        }
+
+        // 2b. 档位日配额（M3 / ADR 0005）。BYOK 用户自付 API 成本，跳过
+        // 用量计量（ADR 0002）；限流仍然生效。BILLING_PROVIDER=none 的
+        // 自托管部署完全不计量。
+        const userKeyInfo = await keyProvider.describeUserKeys(ctx.user.id);
+        const isByokChat = userKeyInfo.openrouter?.isSet === true;
+        const { tier, limits } = await getTierLimits(ctx.user.id);
+        if (isBillingEnforced() && !isByokChat && limits.dailyMessages !== null) {
+          await consumeDailyMeter(
+            ctx.user.id,
+            METERS.chat,
+            limits.dailyMessages,
+            "messages",
+            upsellHint(tier)
+          );
         }
 
         // 2. 保存用户消息（所有权已校验）
@@ -466,6 +621,27 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           systemPrompt += `\n\n【${girlfriend.name}专属指令】\n${girlfriend.customPrompt}`;
         }
 
+        // 长期记忆注入（M2-2）：按相关性取 top-k，等级越高记得越多。
+        // 失败不阻塞聊天。
+        try {
+          systemPrompt += await buildMemoryPromptBlock(
+            ctx.user.id,
+            girlfriend.id,
+            input.content,
+            girlfriend.intimacyLevel || 1
+          );
+        } catch (error) {
+          console.error("[Chat] memory injection failed (non-blocking):", error);
+        }
+
+        // 安全条款（M1-6 / SB 243）：常驻，且排在所有用户可控提示词之后，
+        // 避免被全局/个体提示词覆盖。
+        systemPrompt += `\n${SAFETY_SYSTEM_CLAUSE}`;
+
+        // 自残/危机表达检测：命中时响应会带 safetyNotice，前端展示
+        // 危机干预资源（协议全文见 docs/SAFETY.md）。
+        const safetyNotice = detectSelfHarm(input.content);
+
         // 6. 构建消息历史
         const messages = [
           { role: "system" as const, content: systemPrompt },
@@ -475,50 +651,35 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           })),
         ];
 
-        // 7. 调用 LLM 获取回复
-        // 密钥解析顺序（issue #2 / Phase 1b-i）：
-        //   1) 用户的 BYOK OpenRouter key（如果在 Settings 里配过）
-        //   2) 运营方的 OPERATOR_OPENROUTER_KEY（默认订阅用户走这里）
-        //   3) 都没有 → 走 Manus 内置 invokeLLM
-        const openRouterKey = await keyProvider.get(
-          { userId: ctx.user.id },
-          "openrouter"
-        );
+        // 7. 调用 LLM 获取回复（M1-3：唯一路径是 OpenRouter，key 已在
+        // 步骤 0b 解析并校验）。Manus 内置 LLM 回退已删除。
         let aiResponse: string;
         try {
-          if (openRouterKey) {
-            const openRouterUrl =
-              "https://openrouter.ai/api/v1/chat/completions";
-            const response = await axios.post(
-              openRouterUrl,
-              {
-                model: apiConfig?.llmModel || "openai/gpt-4o-mini",
-                messages,
+          const response = await axios.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            {
+              // 免费档锁定 gpt-4o-mini（成本上限依据，ADR 0005）；
+              // 付费档 / BYOK / 自托管可自由选模型。
+              model:
+                isBillingEnforced() && limits.modelLocked && !isByokChat
+                  ? FREE_TIER_DEFAULT_MODEL
+                  : apiConfig?.llmModel || FREE_TIER_DEFAULT_MODEL,
+              messages,
+            },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${openRouterKey}`,
               },
-              {
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${openRouterKey}`,
-                },
-              }
-            );
-            const messageContent = response.data.choices[0].message.content;
-            aiResponse =
-              typeof messageContent === "string"
-                ? messageContent
-                : JSON.stringify(messageContent);
-          } else {
-            // Manus-built-in fallback (Phase 1b-ii will replace this when
-            // self-hostable auth lands).
-            const response = await invokeLLM({ messages });
-            const messageContent = response.choices[0].message.content;
-            aiResponse =
-              typeof messageContent === "string"
-                ? messageContent
-                : messageContent
-                  ? JSON.stringify(messageContent)
-                  : "抱歉，我现在有点累了，稍后再聊吧~";
-          }
+              // 上游挂起不该占死 Express worker（issue #22 的最小版）。
+              timeout: 60_000,
+            }
+          );
+          const messageContent = response.data.choices[0].message.content;
+          aiResponse =
+            typeof messageContent === "string"
+              ? messageContent
+              : JSON.stringify(messageContent);
         } catch (error) {
           console.error("[Chat] LLM API error:", error);
           aiResponse = "抱歉，我现在有点累了，稍后再聊吧~";
@@ -531,13 +692,19 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           content: aiResponse,
         });
 
-        // 9. 判断是否需要生成自拍
-        const shouldGenerateSelfie = shouldGenerateSelfieFromText(aiResponse, input.content);
+        // 9. 异步记忆提取（M2-1）：每 10 条消息触发一次，不阻塞响应。
+        maybeExtractMemories({
+          userId: ctx.user.id,
+          girlfriendId: girlfriend.id,
+          conversationId: input.conversationId,
+          intimacyLevel: girlfriend.intimacyLevel || 1,
+          apiKey: openRouterKey,
+        });
 
         return {
           userMessage,
           assistantMessage,
-          shouldGenerateSelfie,
+          safetyNotice,
         };
       }),
 
@@ -552,10 +719,16 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         z.object({
           conversationId: z.number(),
           userContext: z.string(), // 用户的上下文描述，如 "wearing a red dress"
+          // M4-1：亲密度解锁的姿势 id（shared/selfiePoses.ts）
+          poseId: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        // 0. 验证对话所有权 — 见 issue #4。selfie.generate 此前会无条件
+        // 0a. 年龄门（M1-6）+ 服务端限流（issue #5）。
+        ensureAgeConfirmed(ctx.user);
+        checkRateLimit(ctx.user.id, "selfie");
+
+        // 0b. 验证对话所有权 — 见 issue #4。selfie.generate 此前会无条件
         // INSERT 一条 assistant message 到 input.conversationId，攻击者可借此
         // 把"自拍消息"写进任意对话。
         const conversation = await getConversation(input.conversationId, ctx.user.id);
@@ -575,6 +748,21 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           });
         }
 
+        // 1b. 姿势等级门（M4-1）：解锁进度由亲密度决定，服务端强制。
+        let pose: ReturnType<typeof getPose> | undefined;
+        if (input.poseId) {
+          pose = getPose(input.poseId);
+          if (!pose) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Unknown pose" });
+          }
+          if (pose.minLevel > (girlfriend.intimacyLevel || 1)) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: `LEVEL_LOCKED: 「${pose.label}」需要亲密度 Lv.${pose.minLevel}（当前 Lv.${girlfriend.intimacyLevel || 1}）。多聊聊天升级吧～`,
+            });
+          }
+        }
+
         // 2. 解析 fal.ai 密钥（用户 BYOK → 运营方默认）
         const falApiKey = await keyProvider.get(
           { userId: ctx.user.id },
@@ -584,13 +772,43 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message:
-              "fal.ai API key not configured (set OPERATOR_FAL_KEY or your own key in Settings)",
+              "Selfie generation is not configured yet: no fal.ai key available. Set OPERATOR_FAL_KEY on the server, or add your own key in Settings.",
           });
         }
 
-        // 3. 使用 Clawra 提示词模板生成提示词
+        // 2b. 档位自拍额度（M3 / ADR 0005）：免费档按日、付费档按月。
+        // BYOK fal 用户和自托管（BILLING_PROVIDER=none）跳过。
+        const selfieKeyInfo = await keyProvider.describeUserKeys(ctx.user.id);
+        const selfieTier = await getTierLimits(ctx.user.id);
+        if (isBillingEnforced() && selfieKeyInfo.fal?.isSet !== true) {
+          if (selfieTier.limits.dailySelfies !== null) {
+            await consumeDailyMeter(
+              ctx.user.id,
+              METERS.selfie,
+              selfieTier.limits.dailySelfies,
+              "selfies",
+              upsellHint(selfieTier.tier)
+            );
+          } else if (selfieTier.limits.monthlySelfies !== null) {
+            await consumeMonthlyMeter(
+              ctx.user.id,
+              METERS.selfie,
+              selfieTier.limits.monthlySelfies,
+              "selfies",
+              upsellHint(selfieTier.tier)
+            );
+          }
+        }
+
+        // 3. 使用 Clawra 提示词模板生成提示词（M4-1：姿势片段 + 用户场景）
+        const combinedContext = pose
+          ? input.userContext.trim()
+            ? `${pose.promptFragment}, ${input.userContext.trim()}`
+            : pose.promptFragment
+          : input.userContext;
         const promptResult = buildSmartPrompt({
-          userContext: input.userContext,
+          userContext: combinedContext,
+          mode: pose && pose.mode !== "auto" ? pose.mode : "auto",
         });
 
         // 4. 调用 fal.ai API 生成图片
@@ -607,6 +825,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
                 "Content-Type": "application/json",
                 Authorization: `Key ${falApiKey}`,
               },
+              timeout: 120_000,
             }
           );
 
@@ -616,8 +835,11 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           throw new Error("Failed to generate selfie");
         }
 
-        // 5. 下载图片并上传到 S3
-        const imageResponse = await axios.get(imageUrl, { responseType: "arraybuffer" });
+        // 5. 下载图片并上传到存储
+        const imageResponse = await axios.get(imageUrl, {
+          responseType: "arraybuffer",
+          timeout: 60_000,
+        });
         const imageBuffer = Buffer.from(imageResponse.data);
         const fileKey = `selfie-${ctx.user.id}-${nanoid()}.png`;
         const { url: s3Url } = await storagePut(fileKey, imageBuffer, "image/png");
@@ -649,6 +871,191 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         };
       }),
 
+    // 合照（M4-2）：用户上传自己的照片，和她同框。Kissable 用这一个
+    // 功能立住差异化；我们的 fal edit 管线天然支持双图输入。
+    // Pro 档专属（BYOK fal / 自托管除外）。
+    generateCouple: protectedProcedure
+      .input(
+        z.object({
+          conversationId: z.number(),
+          userPhotoBase64: z.string().min(1),
+          userPhotoMimeType: z.string(),
+          userContext: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        ensureAgeConfirmed(ctx.user);
+        checkRateLimit(ctx.user.id, "selfie");
+
+        const conversation = await getConversation(input.conversationId, ctx.user.id);
+        if (!conversation) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Conversation not found or not owned by current user",
+          });
+        }
+        const girlfriend = await getActiveGirlfriend(ctx.user.id);
+        if (!girlfriend) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "No active girlfriend found" });
+        }
+
+        // 档位门：Pro 专属（BYOK fal 或自托管除外）。
+        const coupleKeys = await keyProvider.describeUserKeys(ctx.user.id);
+        const byokFal = coupleKeys.fal?.isSet === true;
+        const coupleTier = await getTierLimits(ctx.user.id);
+        if (isBillingEnforced() && !byokFal && coupleTier.tier !== "pro") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "UPGRADE_REQUIRED: Couple photos are a Pro feature. Upgrade in Settings, or add your own fal.ai key.",
+          });
+        }
+
+        const falApiKey = await keyProvider.get({ userId: ctx.user.id }, "fal");
+        if (!falApiKey) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Selfie generation is not configured yet: no fal.ai key available. Set OPERATOR_FAL_KEY on the server, or add your own key in Settings.",
+          });
+        }
+
+        // 额度与普通自拍共用同一计量器。
+        if (isBillingEnforced() && !byokFal) {
+          if (coupleTier.limits.dailySelfies !== null) {
+            await consumeDailyMeter(
+              ctx.user.id,
+              METERS.selfie,
+              coupleTier.limits.dailySelfies,
+              "selfies",
+              upsellHint(coupleTier.tier)
+            );
+          } else if (coupleTier.limits.monthlySelfies !== null) {
+            await consumeMonthlyMeter(
+              ctx.user.id,
+              METERS.selfie,
+              coupleTier.limits.monthlySelfies,
+              "selfies",
+              upsellHint(coupleTier.tier)
+            );
+          }
+        }
+
+        // 校验并上传用户照片（10MB 上限，与头像一致）。
+        const allowed = ["image/jpeg", "image/png", "image/webp"];
+        if (!allowed.includes(input.userPhotoMimeType)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Unsupported photo format (use JPG/PNG/WebP)",
+          });
+        }
+        const photoBuffer = Buffer.from(input.userPhotoBase64, "base64");
+        if (photoBuffer.length > 10 * 1024 * 1024) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Photo exceeds 10MB" });
+        }
+        const ext = input.userPhotoMimeType.split("/")[1];
+        const photoKey = `couple-input-${ctx.user.id}-${nanoid()}.${ext}`;
+        const { url: userPhotoUrl } = await storagePut(
+          photoKey,
+          photoBuffer,
+          input.userPhotoMimeType
+        );
+
+        // 多图编辑模型（默认 nano-banana edit；运营方可用 FAL_COUPLE_MODEL
+        // 换成任何接受 { prompt, image_urls } 的 fal 端点）。
+        const coupleModel = process.env.FAL_COUPLE_MODEL || "fal-ai/nano-banana/edit";
+        const scene = input.userContext?.trim()
+          ? `, ${input.userContext.trim()}`
+          : ", in a cozy warm setting";
+        const prompt = `a natural couple photo of these two people together, standing close and happy, looking at the camera${scene}. keep both faces consistent with the source images`;
+
+        let generatedUrl: string;
+        try {
+          const response = await axios.post(
+            `https://fal.run/${coupleModel}`,
+            {
+              prompt,
+              image_urls: [girlfriend.referenceImageUrl, userPhotoUrl],
+            },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Key ${falApiKey}`,
+              },
+              timeout: 120_000,
+            }
+          );
+          generatedUrl = response.data.images[0].url;
+        } catch (error) {
+          console.error("[Selfie] couple photo fal.ai error:", error);
+          throw new Error("Failed to generate couple photo");
+        }
+
+        const imageResponse = await axios.get(generatedUrl, {
+          responseType: "arraybuffer",
+          timeout: 60_000,
+        });
+        const imageBuffer = Buffer.from(imageResponse.data);
+        const fileKey = `couple-${ctx.user.id}-${nanoid()}.png`;
+        const { url: storedUrl } = await storagePut(fileKey, imageBuffer, "image/png");
+
+        const selfie = await createSelfie({
+          userId: ctx.user.id,
+          girlfriendId: girlfriend.id,
+          imageUrl: storedUrl,
+          imageKey: fileKey,
+          prompt,
+          userContext: input.userContext || "couple photo",
+          mode: "direct",
+        });
+
+        const message = await createMessage({
+          conversationId: input.conversationId,
+          role: "assistant",
+          content: `[合照]`,
+          imageUrl: storedUrl,
+          imageKey: fileKey,
+          selfieMode: "direct",
+        });
+
+        return { selfie, message };
+      }),
+
+    // 剩余自拍额度（M1-4 相机按钮 / M3 档位化）。免费档按日，付费档按月；
+    // BYOK fal 用户和自托管无上限。
+    quota: protectedProcedure.query(async ({ ctx }) => {
+      const keys = await keyProvider.describeUserKeys(ctx.user.id);
+      if (!isBillingEnforced() || keys.fal?.isSet === true) {
+        return {
+          unlimited: true as const,
+          used: 0,
+          limit: 0,
+          remaining: null,
+          period: null,
+        };
+      }
+      const { limits } = await getTierLimits(ctx.user.id);
+      if (limits.dailySelfies !== null) {
+        const used = await getDailyMeter(ctx.user.id, METERS.selfie);
+        return {
+          unlimited: false as const,
+          used,
+          limit: limits.dailySelfies,
+          remaining: Math.max(0, limits.dailySelfies - used),
+          period: "day" as const,
+        };
+      }
+      const limit = limits.monthlySelfies ?? 0;
+      const used = await getMonthlyMeter(ctx.user.id, METERS.selfie);
+      return {
+        unlimited: false as const,
+        used,
+        limit,
+        remaining: Math.max(0, limit - used),
+        period: "month" as const,
+      };
+    }),
+
     // 获取自拍列表
     list: protectedProcedure.query(async ({ ctx }) => {
       return await getUserSelfies(ctx.user.id);
@@ -666,6 +1073,113 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await deleteSelfie(input.id, ctx.user.id);
+        return { success: true };
+      }),
+  }),
+
+  // ============ Web Push (M4-4) ============
+  push: router({
+    // VAPID 公钥（未配置时返回 null，前端隐藏开关）
+    publicKey: publicProcedure.query(() => ({
+      key: getVapidPublicKey(),
+    })),
+
+    // 保存浏览器推送订阅
+    subscribe: protectedProcedure
+      .input(
+        z.object({
+          endpoint: z.string().url().max(500),
+          keys: z.object({ p256dh: z.string(), auth: z.string() }),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await savePushSubscription(ctx.user.id, input);
+        return { success: true };
+      }),
+
+    // 取消订阅
+    unsubscribe: protectedProcedure
+      .input(z.object({ endpoint: z.string().max(500) }))
+      .mutation(async ({ ctx, input }) => {
+        await removePushSubscription(ctx.user.id, input.endpoint);
+        return { success: true };
+      }),
+
+    // 当前用户是否已有订阅端点
+    status: protectedProcedure.query(async ({ ctx }) => ({
+      subscribed: await hasPushSubscription(ctx.user.id),
+      configured: getVapidPublicKey() !== null,
+    })),
+  }),
+
+  // ============ Billing (M3 / ADR 0004) ============
+  billing: router({
+    // 当前档位、用量与升级入口（Settings 订阅卡片用）
+    getInfo: protectedProcedure.query(async ({ ctx }) => {
+      const mode = getBillingMode();
+      const { tier, limits } = await getTierLimits(ctx.user.id);
+      const subscription = await getSubscription(ctx.user.id);
+      const keys = await keyProvider.describeUserKeys(ctx.user.id);
+      const byok = {
+        chat: keys.openrouter?.isSet === true,
+        selfie: keys.fal?.isSet === true,
+      };
+
+      const chatUsed = await getDailyMeter(ctx.user.id, METERS.chat);
+      const selfieUsed =
+        limits.dailySelfies !== null
+          ? await getDailyMeter(ctx.user.id, METERS.selfie)
+          : await getMonthlyMeter(ctx.user.id, METERS.selfie);
+
+      return {
+        mode,
+        tier,
+        limits,
+        byok,
+        usage: {
+          chatToday: chatUsed,
+          chatLimit: limits.dailyMessages,
+          selfiesUsed: selfieUsed,
+          selfieLimit: limits.dailySelfies ?? limits.monthlySelfies,
+          selfiePeriod: (limits.dailySelfies !== null ? "day" : "month") as
+            | "day"
+            | "month",
+        },
+        subscription: subscription
+          ? {
+              plan: subscription.plan,
+              status: subscription.status,
+              renewsAt: subscription.renewsAt,
+              endsAt: subscription.endsAt,
+            }
+          : null,
+        checkoutUrls: mode === "lemonsqueezy" ? getCheckoutUrls() : { plus: null, pro: null },
+      };
+    }),
+  }),
+
+  // ============ Long-term Memory (M2) ============
+  memory: router({
+    // 「她记得你的事」列表（置顶优先，其次按权重）
+    list: protectedProcedure
+      .input(z.object({ girlfriendId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        return await listMemories(ctx.user.id, input.girlfriendId);
+      }),
+
+    // 删除一条记忆（用户对自己的数据有完全控制权）
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteMemory(ctx.user.id, input.id);
+        return { success: true };
+      }),
+
+    // 置顶/取消置顶：置顶的记忆不会被容量淘汰，回忆时加权
+    setPinned: protectedProcedure
+      .input(z.object({ id: z.number(), pinned: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        await setMemoryPinned(ctx.user.id, input.id, input.pinned);
         return { success: true };
       }),
   }),
@@ -1063,9 +1577,16 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
       return { success: true };
     }),
 
-    // 检查并生成主动通知（前端定时调用）
+    // 检查并生成主动通知（前端定时调用；M4-4 起同时推送到已订阅设备）
     checkProactive: protectedProcedure.mutation(async ({ ctx }) => {
       const notification = await checkAndCreateProactiveNotification(ctx.user.id);
+      if (notification) {
+        void sendPushToUser(ctx.user.id, {
+          title: notification.title,
+          body: notification.content,
+          url: "/",
+        }).catch(() => {});
+      }
       return notification;
     }),
   }),
@@ -1080,12 +1601,37 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         })
       )
       .mutation(async ({ ctx, input }) => {
+        // 服务端限流（issue #5）。
+        checkRateLimit(ctx.user.id, "tts");
+
         const apiConfig = await getUserApiConfig(ctx.user.id);
         if (!apiConfig) {
           throw new Error("未配置 API");
         }
 
         const provider = apiConfig.ttsProvider || "browser";
+
+        // 档位门槛（M3 / ADR 0005）：ElevenLabs 需 Plus+，Fish Audio 需
+        // Pro；对应 BYOK key 或自托管模式除外。
+        if (
+          isBillingEnforced() &&
+          (provider === "elevenlabs" || provider === "fishaudio")
+        ) {
+          const ttsKeys = await keyProvider.describeUserKeys(ctx.user.id);
+          const byokForProvider =
+            provider === "elevenlabs"
+              ? ttsKeys.elevenlabs?.isSet === true
+              : ttsKeys["fish-audio"]?.isSet === true;
+          if (!byokForProvider) {
+            const ttsTier = await getTierLimits(ctx.user.id);
+            if (!ttsTier.limits.ttsProviders.includes(provider)) {
+              throw new TRPCError({
+                code: "FORBIDDEN",
+                message: `UPGRADE_REQUIRED: ${provider === "elevenlabs" ? "ElevenLabs voices require a Plus subscription." : "Fish Audio voices require a Pro subscription."} Upgrade in Settings, or add your own key.`,
+              });
+            }
+          }
+        }
 
         if (provider === "elevenlabs") {
           // Phase 1b-i: resolve key via KeyProvider (BYOK → operator).
@@ -1115,6 +1661,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
                   Accept: "audio/mpeg",
                 },
                 responseType: "arraybuffer",
+                timeout: 60_000,
               }
             );
 
@@ -1156,6 +1703,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
                   model: "s1",
                 },
                 responseType: "arraybuffer",
+                timeout: 60_000,
               }
             );
 
@@ -1187,6 +1735,24 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         })
       )
       .mutation(async ({ input, ctx }) => {
+        // 0. 年龄门（M1-6）+ 服务端限流（issue #5）。
+        ensureAgeConfirmed(ctx.user);
+        checkRateLimit(ctx.user.id, "transcribe");
+
+        // 0b. 档位门槛（M3 / ADR 0005）：免费档不含语音转写；
+        // BYOK openai key 或自托管模式除外。
+        const sttKeys = await keyProvider.describeUserKeys(ctx.user.id);
+        if (isBillingEnforced() && sttKeys.openai?.isSet !== true) {
+          const stt = await getTierLimits(ctx.user.id);
+          if (!stt.limits.voiceTranscription) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "UPGRADE_REQUIRED: Voice transcription is a Plus feature. Upgrade in Settings, or add your own OpenAI key.",
+            });
+          }
+        }
+
         // 1. Base64 解码
         const audioBuffer = Buffer.from(input.audioBase64, "base64");
 
@@ -1214,40 +1780,29 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           input.mimeType
         );
 
-        // 4. 获取用户的语音转写配置
-        const apiConfig = await getUserApiConfig(ctx.user.id);
-        const whisperProvider = apiConfig?.whisperProvider || "manus";
-        // Phase 1b-i: OpenAI Whisper key now resolved via KeyProvider.
+        // 4. 解析 Whisper 密钥（M1-3：唯一路径是 OpenAI Whisper；
+        // Manus 内置转写已删除）。BYOK openai key → 运营方 OPERATOR_OPENAI_KEY。
+        // 旧配置里 whisperProvider=manus 的用户自动走同一路径。
         const whisperApiKey = await keyProvider.get(
           { userId: ctx.user.id },
           "openai"
         );
+        if (!whisperApiKey) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Voice transcription is not configured yet: no OpenAI key available. Set OPERATOR_OPENAI_KEY on the server, or add your own key in Settings.",
+          });
+        }
 
-        // 5. 根据配置选择 API
-        let result;
-        if (whisperProvider === "openai") {
-          if (!whisperApiKey) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "请先在设置中配置 OpenAI API Key",
-            });
-          }
-          result = await transcribeWithOpenAI(
-            {
-              audioUrl,
-              language: input.language,
-              prompt: "这是一段与 AI 女友的日常对话语音消息",
-            },
-            whisperApiKey
-          );
-        } else {
-          // 默认使用 Manus 内置服务
-          result = await transcribeAudio({
+        const result = await transcribeWithOpenAI(
+          {
             audioUrl,
             language: input.language,
             prompt: "这是一段与 AI 女友的日常对话语音消息",
-          });
-        }
+          },
+          whisperApiKey
+        );
 
         // 6. 错误处理
         if ("error" in result) {
