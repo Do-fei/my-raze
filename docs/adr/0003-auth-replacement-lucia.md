@@ -1,10 +1,19 @@
 # ADR 0003 — Auth replacement: Lucia v3
 
-- **Status:** Accepted
-- **Date:** 2026-04-30
+- **Status:** ⛔ **SUPERSEDED by [ADR 0006](./0006-auth-library-supersedes-0003.md)** (2026-04-30)
+- **Date:** 2026-04-30 (accepted) → 2026-04-30 (superseded same-day)
 - **Decision-makers:** Project owner
-- **Related:** [ADR 0002](./0002-monetization-model.md), [REFACTORING.md → Phase 1b](../REFACTORING.md)
+- **Related:** [ADR 0002](./0002-monetization-model.md), [ADR 0006](./0006-auth-library-supersedes-0003.md), [REFACTORING.md → Phase 1b](../REFACTORING.md)
 - **Implementation:** Phase 1b-ii branch (`phase-1b-ii/auth-replacement`)
+
+> **⚠️ Superseded same day.** Within hours of acceptance, attempting to
+> install Lucia v3 surfaced `deprecated` markers on `lucia`,
+> `@lucia-auth/adapter-drizzle`, and `oslo`. The maintainer's decision
+> to put the library into maintenance mode invalidates the rationale
+> below ("active maintenance + community signing on for the long
+> haul"). See **ADR 0006** for the replacement decision (Better-Auth)
+> and the full reasoning. The text below is retained verbatim as the
+> historical record of what we initially picked and why.
 
 ## Context
 

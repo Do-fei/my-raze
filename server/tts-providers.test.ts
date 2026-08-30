@@ -5,7 +5,7 @@ import type { TrpcContext } from "./_core/context";
 // 创建认证上下文
 function createAuthContext(): { ctx: TrpcContext } {
   const user = {
-    id: 1,
+    id: "test-user-1",
     openId: "test-user",
     email: "test@example.com",
     name: "Test User",

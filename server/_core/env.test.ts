@@ -101,9 +101,76 @@ describe("env validation (issue #6)", () => {
     process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
     process.env.DATABASE_URL = "mysql://x";
     process.env.NODE_ENV = "production";
+    // Phase 1b-ii.1: production also requires email config (ADR 0006).
+    process.env.EMAIL_FROM = "noreply@example.com";
+    process.env.RESEND_API_KEY = "re_test_key";
+    // M1: production also requires the public deployment URL.
+    process.env.BETTER_AUTH_URL = "https://raze.example.com";
     const { ENV } = await import("./env");
     expect(ENV.isProduction).toBe(true);
     expect(ENV.isTest).toBe(false);
+  });
+
+  it("requires EMAIL_FROM in production (Phase 1b-ii.1 / ADR 0006)", async () => {
+    process.env.JWT_SECRET = "x".repeat(64);
+    process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
+    process.env.DATABASE_URL = "mysql://x";
+    process.env.NODE_ENV = "production";
+    process.env.RESEND_API_KEY = "re_test";
+    // EMAIL_FROM intentionally missing.
+    await expect(import("./env")).rejects.toThrow(
+      /EMAIL_FROM is required in production/
+    );
+  });
+
+  it("requires an email driver in production (Phase 1b-ii.1 / ADR 0006)", async () => {
+    process.env.JWT_SECRET = "x".repeat(64);
+    process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
+    process.env.DATABASE_URL = "mysql://x";
+    process.env.NODE_ENV = "production";
+    process.env.EMAIL_FROM = "noreply@example.com";
+    // No RESEND_API_KEY, no SMTP config.
+    await expect(import("./env")).rejects.toThrow(
+      /Production requires either RESEND_API_KEY/
+    );
+  });
+
+  it("accepts SMTP as the production email driver", async () => {
+    process.env.JWT_SECRET = "x".repeat(64);
+    process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
+    process.env.DATABASE_URL = "mysql://x";
+    process.env.NODE_ENV = "production";
+    process.env.EMAIL_FROM = "noreply@example.com";
+    process.env.EMAIL_PROVIDER = "smtp";
+    process.env.SMTP_HOST = "smtp.example.com";
+    process.env.SMTP_USER = "user";
+    process.env.SMTP_PASS = "pass";
+    process.env.BETTER_AUTH_URL = "https://raze.example.com";
+    const { ENV } = await import("./env");
+    expect(ENV.isProduction).toBe(true);
+  });
+
+  it("requires BETTER_AUTH_URL in production (M1)", async () => {
+    process.env.JWT_SECRET = "x".repeat(64);
+    process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
+    process.env.DATABASE_URL = "mysql://x";
+    process.env.NODE_ENV = "production";
+    process.env.EMAIL_FROM = "noreply@example.com";
+    process.env.RESEND_API_KEY = "re_test";
+    // BETTER_AUTH_URL intentionally missing.
+    await expect(import("./env")).rejects.toThrow(
+      /BETTER_AUTH_URL: required in production/
+    );
+  });
+
+  it("requires S3 config when STORAGE_DRIVER=s3 (M1-2)", async () => {
+    process.env.JWT_SECRET = "x".repeat(64);
+    process.env.NODE_ENV = "test";
+    process.env.STORAGE_DRIVER = "s3";
+    // S3_BUCKET / S3_REGION intentionally missing.
+    await expect(import("./env")).rejects.toThrow(
+      /S3_BUCKET: required when STORAGE_DRIVER=s3/
+    );
   });
 
   it("rejects KEY_ENCRYPTION_KEY equal to JWT_SECRET (Phase 1b-i)", async () => {

@@ -1,6 +1,12 @@
 # my-raze Refactoring Plan
 
-> **Status:** 🚧 Active. Phase 0 in progress.
+> **Status:** ✅ Core productionization done — the app is self-hostable and
+> deployable. Milestones M1–M4 (self-host + retention + billing + experience,
+> summarized in the root `README.md`) are complete. Remaining items are
+> non-blocking hardening: data-layer foreign keys/indexes (Phase 2), the
+> architecture split (Phase 3), CI + structured logging (Phase 5), and full
+> i18n (Phase 6). The **DO NOT DEPLOY** freeze that used to head this file is
+> lifted.
 > **Goal:** Take the v3.0 MVP to a state suitable for **commercial production**
 > **and open-source community use**, without changing the core tech stack.
 
@@ -174,9 +180,10 @@ account-deletion request can be self-served end-to-end.
 | ----- | ------------------------------------------- | -------- |
 | 0001  | Toolchain choices for local dev             | Accepted |
 | 0002  | Monetization: subscription + BYOK           | Accepted |
-| 0003  | Auth replacement: Lucia v3                  | Accepted |
+| 0003  | Auth replacement: Lucia v3                  | ⛔ Superseded by 0006 |
 | 0004  | Billing platform: Lemon Squeezy             | Accepted |
 | 0005  | Pricing tiers, free-tier limits, refunds    | Accepted |
+| 0006  | Auth library: Better-Auth (supersedes 0003) | Accepted |
 
 ---
 

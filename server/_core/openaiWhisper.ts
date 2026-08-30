@@ -5,7 +5,42 @@
  * for users who prefer to use their own OpenAI API keys.
  */
 
-import type { TranscribeOptions, TranscriptionResponse, TranscriptionError, WhisperResponse } from "./voiceTranscription";
+// Transcription types (moved here from the deleted Manus voiceTranscription
+// module in M1-3 — OpenAI Whisper is now the only STT path).
+export type TranscribeOptions = {
+  audioUrl: string; // URL to the audio file
+  language?: string; // Optional: language code (e.g. "en", "zh")
+  prompt?: string; // Optional: custom prompt for the transcription
+};
+
+export type WhisperSegment = {
+  id: number;
+  seek: number;
+  start: number;
+  end: number;
+  text: string;
+  tokens: number[];
+  temperature: number;
+  avg_logprob: number;
+  compression_ratio: number;
+  no_speech_prob: number;
+};
+
+export type WhisperResponse = {
+  task: "transcribe";
+  language: string;
+  duration: number;
+  text: string;
+  segments: WhisperSegment[];
+};
+
+export type TranscriptionResponse = WhisperResponse;
+
+export type TranscriptionError = {
+  error: string;
+  code: "FILE_TOO_LARGE" | "INVALID_FORMAT" | "TRANSCRIPTION_FAILED" | "UPLOAD_FAILED" | "SERVICE_ERROR";
+  details?: string;
+};
 
 /**
  * Transcribe audio using OpenAI Whisper API

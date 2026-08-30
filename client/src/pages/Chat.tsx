@@ -17,11 +17,13 @@ import {
   Camera,
   Mic,
   Keyboard,
+  BookHeart,
 } from "lucide-react";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { VoiceRecordButton } from "@/components/VoiceRecordButton";
 import { LevelUpAnimation } from "@/components/LevelUpAnimation";
 import { IntimacyPanel } from "@/components/IntimacyPanel";
+import { SelfiePoseDialog } from "@/components/SelfiePoseDialog";
 import { getLevelInfo, getLevelProgress, getLevelGradient } from "../../../shared/intimacy";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
@@ -179,6 +181,10 @@ export default function Chat() {
     return (localStorage.getItem("chat-input-mode") as "text" | "voice") || "text";
   });
   const [showIntimacyPanel, setShowIntimacyPanel] = useState(false);
+  const [showCrisisAlert, setShowCrisisAlert] = useState(false);
+  const [showPoseDialog, setShowPoseDialog] = useState(false);
+  // M4-3：语音输入的消息，回复自动朗读（即使未开自动播放）
+  const lastInputWasVoiceRef = useRef(false);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [levelUpLevel, setLevelUpLevel] = useState(1);
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(
@@ -263,34 +269,50 @@ export default function Chat() {
         });
       }
 
-      // 如果开启了自动语音播放，朗读 AI 回复
-      if (autoPlay && data.assistantMessage?.content) {
+      // 朗读 AI 回复：开启了自动播放，或这条消息来自语音输入（M4-3
+      // 语音往返 —— 用语音说话，就用语音回你）。
+      if ((autoPlay || lastInputWasVoiceRef.current) && data.assistantMessage?.content) {
         const content = data.assistantMessage.content;
-        if (content !== "[自拍照片]") {
+        if (!content.startsWith("[")) {
           speak(content);
         }
       }
+      lastInputWasVoiceRef.current = false;
 
-      // 如果需要生成自拍
-      if (data.shouldGenerateSelfie) {
-        toast.info("正在生成自拍照片...");
-        generateSelfie.mutate({
-          conversationId: currentConversationId!,
-          userContext: message,
-        });
+      // M1-4：关键词自动自拍已移除（误触发即付费出图，issue #41）。
+      // 自拍只由相机按钮显式触发。
+
+      // M1-6 / SB 243：检测到自残/危机表达时展示求助资源。
+      if (data.safetyNotice) {
+        setShowCrisisAlert(true);
       }
 
       setMessage("");
       scrollToBottom();
     },
     onError: (error) => {
-      toast.error(`发送失败：${error.message}`);
+      if (error.message.startsWith("UPGRADE_REQUIRED")) {
+        toast.error("当前套餐不支持此功能，去设置查看订阅选项", {
+          action: { label: "去设置", onClick: () => setLocation("/settings") },
+        });
+      } else {
+        toast.error(`发送失败：${error.message}`);
+      }
     },
   });
+
+  // 今日自拍额度（BYOK fal 用户无限制）
+  const selfieQuota = trpc.selfie.quota.useQuery();
+  // 档位信息（合照 Pro 门控展示用）
+  const { data: billingInfo } = trpc.billing.getInfo.useQuery();
+  const selfieRemaining = selfieQuota.data?.unlimited
+    ? Infinity
+    : selfieQuota.data?.remaining ?? null;
 
   const generateSelfie = trpc.selfie.generate.useMutation({
     onSuccess: async () => {
       await refetchMessages();
+      await selfieQuota.refetch();
       toast.success("自拍照片生成成功！");
       scrollToBottom();
       // 触发自拍亲密度经验值
@@ -302,7 +324,47 @@ export default function Chat() {
       }
     },
     onError: (error) => {
-      toast.error(`生成自拍失败：${error.message}`);
+      void selfieQuota.refetch();
+      if (error.message.startsWith("LEVEL_LOCKED")) {
+        toast.error(error.message.replace("LEVEL_LOCKED: ", ""));
+      } else if (error.data?.code === "TOO_MANY_REQUESTS") {
+        toast.error("自拍额度已用完（在设置里查看套餐，或配置自己的 fal.ai Key 解除限制）", {
+          action: { label: "去设置", onClick: () => setLocation("/settings") },
+        });
+      } else if (error.message.startsWith("UPGRADE_REQUIRED")) {
+        toast.error("当前套餐不支持此功能，去设置查看订阅选项", {
+          action: { label: "去设置", onClick: () => setLocation("/settings") },
+        });
+      } else {
+        toast.error(`生成自拍失败：${error.message}`);
+      }
+    },
+  });
+
+  // M4-2：合照生成
+  const generateCouple = trpc.selfie.generateCouple.useMutation({
+    onSuccess: async () => {
+      await refetchMessages();
+      await selfieQuota.refetch();
+      toast.success("合照生成成功！");
+      scrollToBottom();
+      if (girlfriend) {
+        addPoints.mutate({ girlfriendId: girlfriend.id, reason: "selfie" });
+      }
+    },
+    onError: (error) => {
+      void selfieQuota.refetch();
+      if (error.data?.code === "TOO_MANY_REQUESTS") {
+        toast.error("自拍额度已用完（在设置里查看套餐，或配置自己的 fal.ai Key 解除限制）", {
+          action: { label: "去设置", onClick: () => setLocation("/settings") },
+        });
+      } else if (error.message.startsWith("UPGRADE_REQUIRED")) {
+        toast.error("当前套餐不支持此功能，去设置查看订阅选项", {
+          action: { label: "去设置", onClick: () => setLocation("/settings") },
+        });
+      } else {
+        toast.error(`生成自拍失败：${error.message}`);
+      }
     },
   });
 
@@ -353,13 +415,37 @@ export default function Chat() {
     }
   };
 
-  const handleManualSelfie = () => {
+  // M4-1：相机按钮改为打开姿势选择器；姿势随亲密度解锁。
+  const handleSelectPose = (poseId: string) => {
     if (!currentConversationId) return;
+    if (selfieRemaining !== null && selfieRemaining <= 0) {
+      toast.error("自拍额度已用完（在设置里查看套餐，或配置自己的 fal.ai Key 解除限制）");
+      return;
+    }
     toast.info("正在生成自拍照片...");
     generateSelfie.mutate({
       conversationId: currentConversationId,
-      userContext: message.trim() || "a casual selfie, looking cute and happy",
+      userContext: message.trim(),
+      poseId,
     });
+  };
+
+  // M4-2：合照 —— 用户照片转 base64 后与她同框。
+  const handleCouplePhoto = (file: File) => {
+    if (!currentConversationId) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1] ?? "";
+      toast.info("正在生成合照...");
+      generateCouple.mutate({
+        conversationId: currentConversationId!,
+        userPhotoBase64: base64,
+        userPhotoMimeType: file.type,
+        userContext: message.trim() || undefined,
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   // 语音/文字模式切换
@@ -398,7 +484,8 @@ export default function Chat() {
           onSuccess: (data) => {
             setIsTranscribing(false);
             if (data.text) {
-              // 自动发送转写文字
+              // 自动发送转写文字（M4-3：标记语音来源，回复将自动朗读）
+              lastInputWasVoiceRef.current = true;
               sendMessage.mutate({
                 conversationId: currentConversationId!,
                 content: data.text,
@@ -504,6 +591,8 @@ export default function Chat() {
               "在线"
             )}
             {ttsLabel ? ` · 语音: ${ttsLabel}` : ""}
+            {/* M1-6 / SB 243：AI 身份常驻披露 */}
+            <span className="opacity-70"> · AI 虚拟角色，非真人</span>
           </p>
         </div>
 
@@ -552,6 +641,16 @@ export default function Chat() {
 
         <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-10 sm:w-10" onClick={toggleTheme}>
           {theme === "light" ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 sm:h-10 sm:w-10"
+          title="她记得你的事"
+          onClick={() => setLocation(`/memories/${girlfriend.id}`)}
+        >
+          <BookHeart className="w-4 h-4 sm:w-5 sm:h-5" />
         </Button>
 
         <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={() => setLocation("/gallery")}>
@@ -670,22 +769,64 @@ export default function Chat() {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* M1-6 / SB 243：危机干预资源提示（协议见 docs/SAFETY.md） */}
+      {showCrisisAlert && (
+        <div className="mx-3 sm:mx-4 mb-2 rounded-lg border border-amber-400/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 text-xs sm:text-sm text-amber-900 dark:text-amber-100 flex items-start gap-2">
+          <Heart className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="font-medium">你并不孤单，有人愿意倾听。</p>
+            <p className="mt-0.5 opacity-90">
+              中国心理援助热线 400-161-9995（24 小时）
+              · US &amp; Canada: call/text 988
+              · 其他地区：
+              <a href="https://findahelpline.com" target="_blank" rel="noreferrer" className="underline">findahelpline.com</a>
+            </p>
+          </div>
+          <button
+            type="button"
+            className="opacity-60 hover:opacity-100 shrink-0"
+            onClick={() => setShowCrisisAlert(false)}
+            aria-label="关闭提示"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* 输入框 */}
       <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-2 sm:p-4 border-t bg-card" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
-        {/* 拍照按钮 */}
+        {/* 拍照按钮（打开姿势选择器；徽章显示剩余额度） */}
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          onClick={handleManualSelfie}
-          disabled={sendMessage.isPending || generateSelfie.isPending || isRecording || isTranscribing}
-          title="让她拍一张自拍"
-          className="shrink-0 text-primary hover:text-primary hover:bg-primary/10"
+          onClick={() => setShowPoseDialog(true)}
+          disabled={
+            sendMessage.isPending ||
+            generateSelfie.isPending ||
+            generateCouple.isPending ||
+            isRecording ||
+            isTranscribing ||
+            (selfieRemaining !== null && selfieRemaining <= 0)
+          }
+          title={
+            selfieRemaining === null || selfieRemaining === Infinity
+              ? "让她拍一张自拍"
+              : selfieRemaining > 0
+                ? `让她拍一张自拍（剩余 ${selfieRemaining} 张）`
+                : "自拍额度已用完"
+          }
+          className="relative shrink-0 text-primary hover:text-primary hover:bg-primary/10"
         >
-          {generateSelfie.isPending ? (
+          {generateSelfie.isPending || generateCouple.isPending ? (
             <Loader2 className="w-5 h-5 animate-spin" />
           ) : (
             <Camera className="w-5 h-5" />
+          )}
+          {selfieRemaining !== null && selfieRemaining !== Infinity && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 text-center">
+              {selfieRemaining}
+            </span>
           )}
         </Button>
 
@@ -755,6 +896,20 @@ export default function Chat() {
           </>
         )}
       </form>
+
+      {/* 拍照姿势选择器（M4-1/2） */}
+      <SelfiePoseDialog
+        open={showPoseDialog}
+        onOpenChange={setShowPoseDialog}
+        intimacyLevel={girlfriend.intimacyLevel || 1}
+        canCouplePhoto={
+          billingInfo?.mode === "none" ||
+          billingInfo?.byok.selfie === true ||
+          billingInfo?.tier === "pro"
+        }
+        onSelectPose={handleSelectPose}
+        onCouplePhoto={handleCouplePhoto}
+      />
 
       {/* 亲密度详情面板 */}
       <IntimacyPanel
