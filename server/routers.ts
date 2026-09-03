@@ -49,6 +49,10 @@ import {
 } from "./db";
 import { detectSelfHarm, SAFETY_SYSTEM_CLAUSE } from "../shared/safety";
 import {
+  LIVE2D_EMOTION_SYSTEM_CLAUSE,
+  resolveMessageEmotion,
+} from "../shared/live2d";
+import {
   buildMemoryPromptBlock,
   maybeExtractMemories,
   listMemories,
@@ -637,6 +641,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         // 安全条款（M1-6 / SB 243）：常驻，且排在所有用户可控提示词之后，
         // 避免被全局/个体提示词覆盖。
         systemPrompt += `\n${SAFETY_SYSTEM_CLAUSE}`;
+        systemPrompt += `\n${LIVE2D_EMOTION_SYSTEM_CLAUSE}`;
 
         // 自残/危机表达检测：命中时响应会带 safetyNotice，前端展示
         // 危机干预资源（协议全文见 docs/SAFETY.md）。
@@ -685,11 +690,12 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           aiResponse = "抱歉，我现在有点累了，稍后再聊吧~";
         }
 
-        // 8. 保存 AI 回复
+        // 8. 保存 AI 回复（剥掉 Live2D 表情标签，避免出现在气泡里）
+        const spoken = resolveMessageEmotion(aiResponse);
         const assistantMessage = await createMessage({
           conversationId: input.conversationId,
           role: "assistant",
-          content: aiResponse,
+          content: spoken.text,
         });
 
         // 9. 异步记忆提取（M2-1）：每 10 条消息触发一次，不阻塞响应。
@@ -705,6 +711,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           userMessage,
           assistantMessage,
           safetyNotice,
+          emotion: spoken.emotion,
         };
       }),
 

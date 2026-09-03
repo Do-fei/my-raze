@@ -4,6 +4,20 @@
 
 ---
 
+## [4.1] - 2026-09-03 — M5 Live2D 看板娘
+
+### 新增
+- 聊天页官方角色 Live2D 舞台（视线跟随、点击互动、idle/listening/thinking/speaking）
+- 回复情绪标签 `[[emotion:]]`：服务端剥离后驱动表情；无标签时按文案推断
+- API 语音 RMS 口型同步；浏览器 TTS 使用模拟口型
+- 设置页「启用 Live2D」开关；`prefers-reduced-motion` / 无 WebGL 时降级为静态立绘
+- 开发占位模型：Live2D 官方示例 Hiyori（正式模型替换 `client/public/live2d/official/` 即可）
+
+### 工程
+- Cubism Core 不入库，运行时走本地文件或官方 CDN（`pnpm live2d:core`）
+
+---
+
 ## [4.0] - 2026-08-30 — 生产化与独立部署
 
 从依赖托管平台的 v3.0 MVP，重构为可完全自托管、可商用的产品。

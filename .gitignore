@@ -122,3 +122,6 @@ attached_assets/
 
 # Local storage driver uploads (M1-2)
 data/
+
+# Live2D Cubism Core is proprietary — fetch via scripts/fetch-cubism-core.sh
+client/public/live2d/runtime/live2dcubismcore.min.js

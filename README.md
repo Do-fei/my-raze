@@ -16,7 +16,7 @@
 [![Tests](https://img.shields.io/badge/Tests-287_passed-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[遇见她们](#-遇见她们) · [产品演示](#-产品演示) · [Live2D](#-下一版重点live2d-实时互动) · [快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点)
+[遇见她们](#-遇见她们) · [产品演示](#-产品演示) · [Live2D](#-live2d-实时互动) · [快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点)
 
 </div>
 
@@ -108,9 +108,11 @@
 
 </div>
 
-### 💗 下一版重点：Live2D 实时互动
+### 💗 Live2D 实时互动（M5）
 
-她不只是头像——**会听、会动、会闹脾气**。下一版将把 Live2D 立绘嵌进聊天页：你说话时她侧耳倾听，点她会比心，冷落她会生气，撒娇要你陪，委屈了还会哭。
+官方角色 Raze 的聊天页现在带 Live2D 舞台：视线跟随、点击互动、倾听/思考/说话四态，以及按心情和回复情绪切换的表情。API 语音会按音量张嘴；浏览器内置语音用模拟口型。设置里可以改回静态立绘。自建角色仍用照片（Live2D 授权不允许用户导入模型）。
+
+开发版暂用官方示例模型 Hiyori 占位，正式看板娘 `.moc3` 到位后只需替换 `client/public/live2d/official/`。详见 [`client/public/live2d/NOTICE.md`](client/public/live2d/NOTICE.md)。
 
 <div align="center">
 
@@ -185,6 +187,7 @@
 |:--:|------|------|
 | 💬 | **智能对话** | OpenRouter 接入 GPT-4o / Claude / Grok 等 500+ 模型；六套人格模板 + 四层提示词精细控制 |
 | 📸 | **场景自拍** | fal.ai 图生图，保持角色一致；亲密度解锁多种姿势；Pro 支持「合照」 |
+| 🎀 | **Live2D 看板娘** | 官方角色实时立绘：视线跟随、情绪表情、说话口型；可降级为静态立绘 |
 | 🎙️ | **语音互动** | 按住说话 + Whisper 转写；浏览器 / ElevenLabs / Fish Audio 朗读；语音输入后可自动语音回复 |
 | 💕 | **亲密度养成** | 10 级关系、动态心情、升级动画；服务端防刷分，真实互动才有回报 |
 | 🧠 | **长期记忆** | 自动提取事实/偏好/事件，聊天时智能注入；用户可查看、置顶、删除「她记得什么」 |

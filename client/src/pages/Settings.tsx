@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
 import { BillingCard } from "@/components/BillingCard";
 import { PushCard } from "@/components/PushCard";
+import { useLive2DPreference } from "@/hooks/useLive2DPreference";
 
 type ModelInfo = {
   id: string;
@@ -46,6 +47,7 @@ type TTSProvider = "browser" | "elevenlabs" | "fishaudio";
 export default function Settings() {
   const [, setLocation] = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const { enabled: live2dEnabled, setEnabled: setLive2dEnabled } = useLive2DPreference();
 
   // API Key states
   const [falApiKey, setFalApiKey] = useState("");
@@ -569,6 +571,39 @@ export default function Settings() {
 
             {/* ========== 推送通知（M4-4） ========== */}
             <PushCard />
+
+            {/* ========== Live2D 看板娘（M5） ========== */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  Live2D 看板娘
+                </CardTitle>
+                <CardDescription>
+                  官方角色 Raze 的实时立绘：视线跟随、情绪表情、说话口型。自建角色仍用静态照片（Live2D 授权不允许用户导入模型）。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <Label>启用 Live2D</Label>
+                    <p className="text-xs text-muted-foreground">
+                      关闭后聊天页只显示静态立绘。系统开启「减少动态效果」时也会自动降级。
+                    </p>
+                  </div>
+                  <Switch
+                    checked={live2dEnabled}
+                    onCheckedChange={(checked) => {
+                      setLive2dEnabled(checked);
+                      toast.success(checked ? "已开启 Live2D 看板娘" : "已改用静态立绘");
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  当前开发版使用 Live2D 官方示例模型 Hiyori 占位，正式看板娘模型到位后会直接替换。浏览器内置语音只有模拟口型；ElevenLabs / Fish Audio 会按真实音量张嘴。
+                </p>
+              </CardContent>
+            </Card>
 
             {/* ========== 语音设置 ========== */}
             <Card>

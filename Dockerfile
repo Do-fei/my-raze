@@ -14,6 +14,11 @@ WORKDIR /app
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Cubism Core is proprietary and not in git; fetch for the Vite public/ copy.
+RUN mkdir -p client/public/live2d/runtime \
+  && wget -qO client/public/live2d/runtime/live2dcubismcore.min.js \
+    https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js \
+  || echo "WARN: Cubism Core download failed; browsers will use the official CDN"
 ENV NODE_ENV=production
 RUN pnpm build
 
