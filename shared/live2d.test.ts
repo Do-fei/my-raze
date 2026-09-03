@@ -13,6 +13,8 @@ import {
   simulatedMouthValue,
   stripLive2DEmotionTag,
   emotionToPreset,
+  mergePoseTarget,
+  stepPoseBlend,
 } from "./live2d";
 
 describe("stripLive2DEmotionTag", () => {
@@ -134,6 +136,33 @@ describe("playful tap cycle", () => {
     expect(stripLive2DEmotionTag("哼 [[emotion:tantrum]]").emotion).toBe("tantrum");
     expect(inferEmotionFromText("我要发脾气了")).toBe("tantrum");
     expect(inferEmotionFromText("人家要撒娇")).toBe("flirty");
+  });
+
+  it("uses big body poses: akimbo, heart arms, and a jump hop", () => {
+    const angry = emotionToPreset("angry");
+    expect(angry.params.ParamArmLA).toBe(10);
+    expect(angry.params.ParamArmRA).toBe(10);
+    expect(angry.parts?.PartArmA).toBe(1);
+
+    const heart = emotionToPreset("flirty");
+    expect(heart.params.ParamArmLB).toBe(10);
+    expect(heart.params.ParamArmRB).toBe(10);
+    expect(heart.parts?.PartArmB).toBe(1);
+    expect(heart.hop?.height).toBeGreaterThan(10);
+
+    const jump = emotionToPreset("tantrum");
+    expect(jump.hop?.hops).toBeGreaterThanOrEqual(3);
+    expect(jump.hop?.height).toBeGreaterThan(40);
+    expect(jump.params.ParamLeg).toBe(1);
+  });
+
+  it("eases pose params back to the rest pose", () => {
+    const target = mergePoseTarget({ ParamArmLA: 10 });
+    expect(target.ParamArmLA).toBe(10);
+    expect(target.ParamArmRA).toBe(-10);
+    expect(target.ParamCheek).toBe(0);
+    const mid = stepPoseBlend({ ParamArmLA: -10 }, { ParamArmLA: 10 }, 0.5);
+    expect(mid.ParamArmLA).toBe(0);
   });
 });
 

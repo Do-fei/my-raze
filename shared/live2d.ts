@@ -35,11 +35,11 @@ export const PLAYFUL_EMOTIONS = [
 export type PlayfulEmotion = (typeof PLAYFUL_EMOTIONS)[number];
 
 export const PLAYFUL_EMOTION_LABELS: Record<PlayfulEmotion, string> = {
-  angry: "生气",
+  angry: "叉腰生气",
   shy: "害羞",
-  flirty: "撒娇",
+  flirty: "比心",
   sad: "哭鼻子",
-  tantrum: "发脾气",
+  tantrum: "跳起来",
 };
 
 export const MESSAGE_EMOTION_LABELS: Record<MessageEmotion, string> = {
@@ -236,12 +236,76 @@ export function resolveAvatarPhase(flags: {
 }
 
 /** Hiyori has no expression files — we drive named parameter presets instead. */
+export type Live2DHop = {
+  /** Pixels to lift the PIXI model (stage space). */
+  height: number;
+  hops: number;
+  ms: number;
+};
+
 export type ParameterPreset = {
-  /** Parameter id → target 0..1 (or typical Live2D range). */
+  /** Parameter id → target (Live2D range, often -30..30 or -10..10). */
   params: Record<string, number>;
+  /** Part opacity 0..1. Used to switch Hiyori Arm A / Arm B drawings. */
+  parts?: Record<string, number>;
+  hop?: Live2DHop;
   motionGroup?: "Idle" | "TapBody";
   motionIndex?: number;
 };
+
+/** Rest pose so arms/body ease back when a reaction ends. */
+export const LIVE2D_POSE_RESET: Record<string, number> = {
+  ParamArmLA: -10,
+  ParamArmRA: -10,
+  ParamArmLB: 0,
+  ParamArmRB: 0,
+  ParamHandL: 0,
+  ParamHandR: 0,
+  ParamHandLB: 0,
+  ParamHandRB: 0,
+  ParamLeg: 0,
+  ParamShoulder: 0,
+  ParamBodyAngleX: 0,
+  ParamBodyAngleY: 0,
+  ParamBodyAngleZ: 0,
+};
+
+export const LIVE2D_PARTS_DEFAULT: Record<string, number> = {
+  PartArmA: 1,
+  PartArmB: 0,
+};
+
+/** Face keys we ease back — not eyes or look-at X/Y (blink + 视线跟随). */
+export const LIVE2D_FACE_RESET: Record<string, number> = {
+  ParamMouthForm: 0,
+  ParamCheek: 0,
+  ParamBrowLY: 0,
+  ParamBrowRY: 0,
+  ParamBrowLAngle: 0,
+  ParamBrowRAngle: 0,
+  ParamBrowLForm: 0,
+  ParamBrowRForm: 0,
+  ParamEyeLSmile: 0,
+  ParamEyeRSmile: 0,
+  ParamAngleZ: 0,
+};
+
+export function mergePoseTarget(params: Record<string, number>): Record<string, number> {
+  return { ...LIVE2D_POSE_RESET, ...LIVE2D_FACE_RESET, ...params };
+}
+
+export function stepPoseBlend(
+  current: Record<string, number>,
+  target: Record<string, number>,
+  alpha = 0.18
+): Record<string, number> {
+  const next: Record<string, number> = {};
+  for (const [key, dest] of Object.entries(target)) {
+    const cur = current[key] ?? dest;
+    next[key] = cur + (dest - cur) * alpha;
+  }
+  return next;
+}
 
 export function moodToEmotion(mood: CompanionMood | null | undefined): MessageEmotion {
   switch (mood) {
@@ -291,83 +355,122 @@ export function emotionToPreset(emotion: MessageEmotion): ParameterPreset {
     case "shy":
       return {
         params: {
-          ParamMouthForm: 0.35,
-          ParamEyeLOpen: 0.68,
-          ParamEyeROpen: 0.68,
-          ParamBrowLForm: 0.45,
-          ParamBrowRForm: 0.45,
+          ParamMouthForm: 0.2,
+          ParamEyeLOpen: 0.55,
+          ParamEyeROpen: 0.55,
+          ParamBrowLForm: 0.55,
+          ParamBrowRForm: 0.55,
           ParamCheek: 1,
-          ParamAngleZ: 8,
-          ParamAngleY: -6,
+          ParamAngleX: -18,
+          ParamAngleY: -16,
+          ParamAngleZ: 22,
+          ParamBodyAngleX: -8,
+          ParamBodyAngleZ: 10,
+          ParamShoulder: 0.85,
+          ParamArmLA: 4,
+          ParamArmRA: -10,
+          ParamHandL: 1,
         },
-        motionGroup: "TapBody",
+        parts: { PartArmA: 1, PartArmB: 0 },
+        hop: { height: 16, hops: 1, ms: 420 },
       };
     case "angry":
+      // Arms A pushed to the outer extreme ≈ 叉腰 / 双手撑腰.
       return {
         params: {
-          ParamMouthForm: -0.55,
-          ParamBrowLY: -0.8,
-          ParamBrowRY: -0.8,
-          ParamBrowLAngle: -0.7,
-          ParamBrowRAngle: 0.7,
-          ParamBrowLForm: -0.6,
-          ParamBrowRForm: -0.6,
-          ParamEyeLOpen: 0.9,
-          ParamEyeROpen: 0.9,
-          ParamAngleZ: -6,
+          ParamMouthForm: -0.85,
+          ParamBrowLY: -1,
+          ParamBrowRY: -1,
+          ParamBrowLAngle: -0.9,
+          ParamBrowRAngle: 0.9,
+          ParamBrowLForm: -1,
+          ParamBrowRForm: -1,
+          ParamEyeLOpen: 1,
+          ParamEyeROpen: 1,
+          ParamAngleX: 8,
+          ParamAngleZ: -16,
+          ParamBodyAngleX: 10,
+          ParamBodyAngleZ: -10,
+          ParamShoulder: 1,
+          ParamArmLA: 10,
+          ParamArmRA: 10,
+          ParamHandL: -1,
+          ParamHandR: -1,
         },
-        motionGroup: "TapBody",
+        parts: { PartArmA: 1, PartArmB: 0 },
+        hop: { height: 14, hops: 1, ms: 380 },
       };
     case "sad":
       return {
         params: {
-          ParamMouthForm: -0.7,
-          ParamBrowLForm: 0.85,
-          ParamBrowRForm: 0.85,
-          ParamBrowLY: 0.45,
-          ParamBrowRY: 0.45,
-          ParamEyeLOpen: 0.55,
-          ParamEyeROpen: 0.55,
-          ParamShoulder: 0.35,
-          ParamAngleY: -8,
+          ParamMouthForm: -0.9,
+          ParamBrowLForm: 1,
+          ParamBrowRForm: 1,
+          ParamBrowLY: 0.55,
+          ParamBrowRY: 0.55,
+          ParamEyeLOpen: 0.4,
+          ParamEyeROpen: 0.4,
+          ParamAngleY: -22,
+          ParamAngleZ: -8,
+          ParamBodyAngleY: -8,
+          ParamBodyAngleZ: -6,
+          ParamShoulder: 1,
+          ParamArmLA: -10,
+          ParamArmRA: -10,
+          ParamLeg: 0.2,
         },
-        motionGroup: "TapBody",
+        parts: { PartArmA: 1, PartArmB: 0 },
       };
     case "flirty":
+      // Arm B is the gesture drawing — both arms up/in ≈ 比心.
       return {
         params: {
-          ParamMouthForm: 0.95,
-          ParamEyeLSmile: 0.85,
-          ParamEyeRSmile: 0.85,
-          ParamEyeLOpen: 0.7,
-          ParamEyeROpen: 0.7,
-          ParamBrowLY: 0.35,
-          ParamBrowRY: 0.35,
+          ParamMouthForm: 1,
+          ParamEyeLSmile: 1,
+          ParamEyeRSmile: 1,
+          ParamEyeLOpen: 0.65,
+          ParamEyeROpen: 0.65,
+          ParamBrowLY: 0.45,
+          ParamBrowRY: 0.45,
           ParamCheek: 1,
-          ParamAngleZ: -10,
-          ParamBodyAngleZ: -4,
+          ParamAngleY: 8,
+          ParamAngleZ: -12,
+          ParamBodyAngleY: 8,
+          ParamBodyAngleZ: -6,
+          ParamArmLB: 10,
+          ParamArmRB: 10,
+          ParamHandLB: 10,
+          ParamHandRB: 10,
+          ParamHandL: 1,
+          ParamHandR: 1,
         },
-        motionGroup: "TapBody",
+        parts: { PartArmA: 0, PartArmB: 1 },
+        hop: { height: 22, hops: 1, ms: 480 },
       };
     case "tantrum":
       return {
         params: {
           ParamMouthForm: -1,
-          ParamMouthOpenY: 0.35,
-          ParamEyeLOpen: 1.1,
-          ParamEyeROpen: 1.1,
+          ParamMouthOpenY: 0.5,
+          ParamEyeLOpen: 1.15,
+          ParamEyeROpen: 1.15,
           ParamBrowLY: -1,
           ParamBrowRY: -1,
           ParamBrowLForm: -1,
           ParamBrowRForm: -1,
-          ParamBrowLAngle: -0.9,
-          ParamBrowRAngle: 0.9,
-          ParamCheek: 0.45,
-          ParamAngleZ: 12,
-          ParamBodyAngleZ: 8,
-          ParamShoulder: 0.5,
+          ParamBrowLAngle: -1,
+          ParamBrowRAngle: 1,
+          ParamCheek: 0.55,
+          ParamAngleZ: 18,
+          ParamBodyAngleY: 10,
+          ParamBodyAngleZ: 10,
+          ParamShoulder: 1,
+          ParamArmLA: 2,
+          ParamArmRA: 2,
+          ParamLeg: 1,
         },
-        motionGroup: "TapBody",
+        parts: { PartArmA: 1, PartArmB: 0 },
+        hop: { height: 56, hops: 3, ms: 1100 },
       };
     case "listening":
       return {
@@ -375,7 +478,8 @@ export function emotionToPreset(emotion: MessageEmotion): ParameterPreset {
           ParamEyeLOpen: 1,
           ParamEyeROpen: 1,
           ParamMouthForm: 0.1,
-          ParamAngleZ: 8,
+          ParamAngleZ: 10,
+          ParamBodyAngleZ: 6,
         },
       };
     default:

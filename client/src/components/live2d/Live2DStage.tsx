@@ -125,7 +125,12 @@ export function Live2DStage({
   }, []);
 
   const handleHit = useCallback(() => {
-    setUserOverride((prev) => nextPlayfulEmotion(prev));
+    setUserOverride((prev) => {
+      const next = nextPlayfulEmotion(prev);
+      queueMicrotask(() => handleRef.current?.playReact(next));
+      return next;
+    });
+    setOverrideTick((tick) => tick + 1);
   }, []);
 
   return (
@@ -163,6 +168,20 @@ export function Live2DStage({
       <div className="pointer-events-none absolute left-2 top-2 rounded-full bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground backdrop-blur">
         {PHASE_LABEL[phase]} · {MESSAGE_EMOTION_LABELS[emotion]}
       </div>
+
+      {useCanvas && userOverride === "flirty" && (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <span className="absolute left-[46%] top-[34%] animate-bounce text-3xl text-pink-500 drop-shadow">
+            ♡
+          </span>
+          <span className="absolute left-[54%] top-[30%] animate-bounce text-xl text-rose-400 delay-150 drop-shadow">
+            ♡
+          </span>
+          <span className="absolute left-[50%] top-[26%] animate-bounce text-lg text-pink-400 delay-300 drop-shadow">
+            ♡
+          </span>
+        </div>
+      )}
 
       {useCanvas && (
         <div className="absolute bottom-6 left-1 right-1 z-10 flex flex-wrap justify-center gap-1 px-1">

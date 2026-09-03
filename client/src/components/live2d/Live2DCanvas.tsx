@@ -2,9 +2,14 @@ import {
   computeLive2DLayout,
   CUBISM_CORE_CDN,
   emotionToPreset,
+  isPlayfulEmotion,
+  LIVE2D_PARTS_DEFAULT,
+  mergePoseTarget,
   OFFICIAL_LIVE2D_MODEL,
+  stepPoseBlend,
   type AvatarPhase,
   type CompanionMood,
+  type Live2DHop,
   type MessageEmotion,
 } from "@shared/live2d";
 import { useEffect, useRef } from "react";
@@ -12,11 +17,12 @@ import { ensureCubismCore } from "@/lib/cubism-core";
 
 type CoreModel = {
   setParameterValueById?: (id: string, value: number, weight?: number) => void;
+  setPartOpacityById?: (id: string, value: number) => void;
 };
 
 type EngineModel = {
   anchor: { set: (x: number, y: number) => void };
-  position: { set: (x: number, y: number) => void };
+  position: { x: number; y: number; set: (x: number, y: number) => void };
   scale: { set: (x: number, y?: number) => void };
   width: number;
   height: number;
@@ -26,10 +32,12 @@ type EngineModel = {
     originalHeight?: number;
     width?: number;
     height?: number;
+    motionManager?: { stopAllMotions?: () => void };
   };
   focus: (x: number, y: number, instant?: boolean) => void;
   tap: (x: number, y: number) => void;
   motion: (group: string, index?: number) => Promise<boolean>;
+  stopMotions?: () => void;
   speak?: (
     sound: string,
     opts?: { volume?: number; onFinish?: () => void; onError?: (e: Error) => void }
@@ -56,6 +64,8 @@ type Props = {
   onHit?: (areas: string[]) => void;
 };
 
+type HopState = Live2DHop & { started: number };
+
 function applyParams(model: EngineModel | null, params: Record<string, number>) {
   const core = model?.internalModel?.coreModel;
   if (!core?.setParameterValueById) return;
@@ -65,6 +75,28 @@ function applyParams(model: EngineModel | null, params: Record<string, number>) 
     } catch {
       // Parameter may not exist on this model.
     }
+  }
+}
+
+function applyParts(model: EngineModel | null, parts: Record<string, number>) {
+  const core = model?.internalModel?.coreModel;
+  if (!core?.setPartOpacityById) return;
+  for (const [id, value] of Object.entries(parts)) {
+    try {
+      core.setPartOpacityById(id, value);
+    } catch {
+      // Part may not exist on this model.
+    }
+  }
+}
+
+function stopModelMotions(model: EngineModel | null) {
+  if (!model) return;
+  try {
+    model.stopMotions?.();
+    model.internalModel?.motionManager?.stopAllMotions?.();
+  } catch {
+    // engine build may not expose stop
   }
 }
 
@@ -81,6 +113,7 @@ function layoutModel(model: EngineModel, viewW: number, viewH: number) {
   model.scale.set(layout.scale);
   model.anchor.set(layout.anchorX, layout.anchorY);
   model.position.set(layout.x, layout.y);
+  return layout;
 }
 
 export function Live2DCanvas({
@@ -93,7 +126,6 @@ export function Live2DCanvas({
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<EngineModel | null>(null);
-  // Pixi container typing is heavy; the engine model is a Container at runtime.
   const pixiModel = (m: EngineModel) => m as never;
   const mouthRef = useRef(0);
   const emotionRef = useRef(emotion);
@@ -101,6 +133,10 @@ export function Live2DCanvas({
   const onReadyRef = useRef(onReady);
   const onFailRef = useRef(onFail);
   const onHitRef = useRef(onHit);
+  const blendRef = useRef<Record<string, number>>({});
+  const hopRef = useRef<HopState | null>(null);
+  const layoutYRef = useRef(0);
+  const startHopRef = useRef<(hop?: Live2DHop) => void>(() => {});
 
   emotionRef.current = emotion;
   phaseRef.current = phase;
@@ -108,11 +144,28 @@ export function Live2DCanvas({
   onFailRef.current = onFail;
   onHitRef.current = onHit;
 
+  startHopRef.current = (hop) => {
+    if (!hop || reducedMotion) {
+      hopRef.current = null;
+      return;
+    }
+    hopRef.current = { ...hop, started: performance.now() };
+  };
+
+  useEffect(() => {
+    const preset = emotionToPreset(emotion);
+    if (isPlayfulEmotion(emotion)) {
+      stopModelMotions(modelRef.current);
+      startHopRef.current(preset.hop);
+    } else if (!reducedMotion && modelRef.current && !preset.hop) {
+      void modelRef.current.motion("Idle");
+    }
+  }, [emotion, reducedMotion]);
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     let disposed = false;
-    // Avoid fighting Pixi Application generics in this wrapper.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let app: any = null;
     let resizeObserver: ResizeObserver | null = null;
@@ -159,22 +212,46 @@ export function Live2DCanvas({
           return;
         }
         modelRef.current = model;
-        layoutModel(model, application.screen.width, application.screen.height);
+        const firstLayout = layoutModel(
+          model,
+          application.screen.width,
+          application.screen.height
+        );
+        layoutYRef.current = firstLayout.y;
         application.stage.addChild(pixiModel(model));
 
         model.on("hit", (...args: unknown[]) => {
           const areas = (args[0] as string[]) ?? [];
           onHitRef.current?.(areas);
-          void model.motion("TapBody");
         });
 
         application.ticker.add(() => {
           const current = modelRef.current;
           if (!current) return;
-          applyParams(current, emotionToPreset(emotionRef.current).params);
+          const preset = emotionToPreset(emotionRef.current);
+          const target = mergePoseTarget(preset.params);
+          blendRef.current = stepPoseBlend(blendRef.current, target);
+          applyParams(current, blendRef.current);
+          applyParts(current, preset.parts ?? LIVE2D_PARTS_DEFAULT);
           if (phaseRef.current === "speaking" || mouthRef.current > 0.01) {
             applyParams(current, { ParamMouthOpenY: mouthRef.current });
           }
+
+          const hop = hopRef.current;
+          let y = layoutYRef.current;
+          if (hop) {
+            const t = (performance.now() - hop.started) / hop.ms;
+            if (t >= 1) {
+              hopRef.current = null;
+            } else {
+              y = layoutYRef.current - hop.height * Math.abs(Math.sin(t * hop.hops * Math.PI));
+              applyParams(current, {
+                ParamLeg: Math.abs(Math.sin(t * hop.hops * Math.PI)),
+                ParamBodyAngleY: 10 * Math.abs(Math.sin(t * hop.hops * Math.PI)),
+              });
+            }
+          }
+          current.position.set(current.position.x, y);
         });
 
         const handle: Live2DHandle = {
@@ -193,8 +270,9 @@ export function Live2DCanvas({
           playReact: (nextEmotion) => {
             const current = modelRef.current;
             if (!current) return;
-            const preset = nextEmotion ? emotionToPreset(nextEmotion) : null;
-            void current.motion(preset?.motionGroup ?? "TapBody", preset?.motionIndex);
+            stopModelMotions(current);
+            const preset = emotionToPreset(nextEmotion ?? emotionRef.current);
+            startHopRef.current(preset.hop);
           },
         };
         onReadyRef.current?.(handle);
@@ -205,7 +283,8 @@ export function Live2DCanvas({
 
         resizeObserver = new ResizeObserver(() => {
           if (!modelRef.current || !app) return;
-          layoutModel(modelRef.current, app.screen.width, app.screen.height);
+          const layout = layoutModel(modelRef.current, app.screen.width, app.screen.height);
+          layoutYRef.current = layout.y;
         });
         resizeObserver.observe(host);
 
