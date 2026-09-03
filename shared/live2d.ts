@@ -19,7 +19,42 @@ export type MessageEmotion =
   | "angry"
   | "sad"
   | "listening"
-  | "neutral";
+  | "neutral"
+  | "flirty"
+  | "tantrum";
+
+/** Playful reactions the user can tap on the official sample model. */
+export const PLAYFUL_EMOTIONS = [
+  "angry",
+  "shy",
+  "flirty",
+  "sad",
+  "tantrum",
+] as const satisfies readonly MessageEmotion[];
+
+export type PlayfulEmotion = (typeof PLAYFUL_EMOTIONS)[number];
+
+export const PLAYFUL_EMOTION_LABELS: Record<PlayfulEmotion, string> = {
+  angry: "生气",
+  shy: "害羞",
+  flirty: "撒娇",
+  sad: "哭鼻子",
+  tantrum: "发脾气",
+};
+
+export const MESSAGE_EMOTION_LABELS: Record<MessageEmotion, string> = {
+  shy: "害羞",
+  happy: "开心",
+  angry: "生气",
+  sad: "难过",
+  listening: "在听",
+  neutral: "平静",
+  flirty: "撒娇",
+  tantrum: "发脾气",
+};
+
+/** How long a tap/button reaction stays before chat mood takes over again. */
+export const PLAYFUL_OVERRIDE_MS = 6_000;
 
 export const LIVE2D_PREF_KEY = "live2d-enabled";
 
@@ -41,14 +76,16 @@ const EMOTION_VALUES: MessageEmotion[] = [
   "sad",
   "listening",
   "neutral",
+  "flirty",
+  "tantrum",
 ];
 
 export const LIVE2D_EMOTION_TAG =
-  /\[\[\s*emotion\s*:\s*(shy|happy|angry|sad|listening|neutral)\s*\]\]/gi;
+  /\[\[\s*emotion\s*:\s*(shy|happy|angry|sad|listening|neutral|flirty|tantrum)\s*\]\]/gi;
 
 export const LIVE2D_EMOTION_SYSTEM_CLAUSE = `
 【Live2D 表情（用户不可见）】
-每条回复的最后单独一行写 [[emotion:标签]]，标签只能是 shy / happy / angry / sad / listening / neutral 之一。
+每条回复的最后单独一行写 [[emotion:标签]]，标签只能是 shy / happy / angry / sad / listening / neutral / flirty / tantrum 之一。
 不要解释这个标签，不要把它念出来。`;
 
 const POSITIVE_HINTS = [
@@ -114,6 +151,10 @@ const SAD_HINTS = [
 
 const LISTEN_HINTS = ["嗯", "我在听", "继续", "说说", "listening", "tell me"];
 
+const FLIRTY_HINTS = ["撒娇", "人家嘛", "摸摸头", "抱抱", "亲一下", "要奖励"];
+
+const TANTRUM_HINTS = ["发脾气", "跺脚", "气鼓鼓", "哼哼"];
+
 export function isOfficialLive2DCompanion(gf: {
   referenceImageKey?: string | null;
   name?: string | null;
@@ -148,12 +189,27 @@ export function stripLive2DEmotionTag(text: string): {
 
 export function inferEmotionFromText(text: string): MessageEmotion {
   const content = text.toLowerCase();
+  if (TANTRUM_HINTS.some((k) => content.includes(k.toLowerCase()))) return "tantrum";
   if (ANGRY_HINTS.some((k) => content.includes(k.toLowerCase()))) return "angry";
   if (SAD_HINTS.some((k) => content.includes(k.toLowerCase()))) return "sad";
+  if (FLIRTY_HINTS.some((k) => content.includes(k.toLowerCase()))) return "flirty";
   if (SHY_HINTS.some((k) => content.includes(k.toLowerCase()))) return "shy";
   if (LISTEN_HINTS.some((k) => content.includes(k.toLowerCase()))) return "listening";
   if (POSITIVE_HINTS.some((k) => content.includes(k.toLowerCase()))) return "happy";
   return "neutral";
+}
+
+export function nextPlayfulEmotion(
+  current: MessageEmotion | null | undefined
+): PlayfulEmotion {
+  const idx = current
+    ? PLAYFUL_EMOTIONS.indexOf(current as PlayfulEmotion)
+    : -1;
+  return PLAYFUL_EMOTIONS[(idx + 1) % PLAYFUL_EMOTIONS.length];
+}
+
+export function isPlayfulEmotion(value: string): value is PlayfulEmotion {
+  return (PLAYFUL_EMOTIONS as readonly string[]).includes(value);
 }
 
 export function resolveMessageEmotion(rawAssistantText: string): {
@@ -203,14 +259,17 @@ export function moodToEmotion(mood: CompanionMood | null | undefined): MessageEm
 }
 
 /**
- * Message emotion wins; mood is the idle wash. Phase can force a listening tilt.
+ * Listening always wins. A tap/button override beats chat emotion until it expires.
+ * Message emotion wins over the idle mood wash.
  */
 export function resolveExpression(args: {
   phase: AvatarPhase;
   mood?: CompanionMood | null;
   messageEmotion?: MessageEmotion | null;
+  userOverride?: MessageEmotion | null;
 }): MessageEmotion {
   if (args.phase === "listening") return "listening";
+  if (args.userOverride) return args.userOverride;
   if (args.phase === "thinking") {
     return args.messageEmotion ?? moodToEmotion(args.mood) ?? "neutral";
   }
@@ -233,36 +292,82 @@ export function emotionToPreset(emotion: MessageEmotion): ParameterPreset {
       return {
         params: {
           ParamMouthForm: 0.35,
-          ParamEyeLOpen: 0.75,
-          ParamEyeROpen: 0.75,
-          ParamBrowLForm: 0.4,
-          ParamBrowRForm: 0.4,
-          ParamCheek: 0.8,
+          ParamEyeLOpen: 0.68,
+          ParamEyeROpen: 0.68,
+          ParamBrowLForm: 0.45,
+          ParamBrowRForm: 0.45,
+          ParamCheek: 1,
+          ParamAngleZ: 8,
+          ParamAngleY: -6,
         },
+        motionGroup: "TapBody",
       };
     case "angry":
       return {
         params: {
-          ParamMouthForm: -0.4,
-          ParamBrowLY: -0.6,
-          ParamBrowRY: -0.6,
-          ParamBrowLAngle: -0.5,
-          ParamBrowRAngle: 0.5,
-          ParamEyeLOpen: 0.85,
-          ParamEyeROpen: 0.85,
+          ParamMouthForm: -0.55,
+          ParamBrowLY: -0.8,
+          ParamBrowRY: -0.8,
+          ParamBrowLAngle: -0.7,
+          ParamBrowRAngle: 0.7,
+          ParamBrowLForm: -0.6,
+          ParamBrowRForm: -0.6,
+          ParamEyeLOpen: 0.9,
+          ParamEyeROpen: 0.9,
+          ParamAngleZ: -6,
         },
+        motionGroup: "TapBody",
       };
     case "sad":
       return {
         params: {
-          ParamMouthForm: -0.55,
-          ParamBrowLForm: 0.7,
-          ParamBrowRForm: 0.7,
-          ParamBrowLY: 0.35,
-          ParamBrowRY: 0.35,
+          ParamMouthForm: -0.7,
+          ParamBrowLForm: 0.85,
+          ParamBrowRForm: 0.85,
+          ParamBrowLY: 0.45,
+          ParamBrowRY: 0.45,
+          ParamEyeLOpen: 0.55,
+          ParamEyeROpen: 0.55,
+          ParamShoulder: 0.35,
+          ParamAngleY: -8,
+        },
+        motionGroup: "TapBody",
+      };
+    case "flirty":
+      return {
+        params: {
+          ParamMouthForm: 0.95,
+          ParamEyeLSmile: 0.85,
+          ParamEyeRSmile: 0.85,
           ParamEyeLOpen: 0.7,
           ParamEyeROpen: 0.7,
+          ParamBrowLY: 0.35,
+          ParamBrowRY: 0.35,
+          ParamCheek: 1,
+          ParamAngleZ: -10,
+          ParamBodyAngleZ: -4,
         },
+        motionGroup: "TapBody",
+      };
+    case "tantrum":
+      return {
+        params: {
+          ParamMouthForm: -1,
+          ParamMouthOpenY: 0.35,
+          ParamEyeLOpen: 1.1,
+          ParamEyeROpen: 1.1,
+          ParamBrowLY: -1,
+          ParamBrowRY: -1,
+          ParamBrowLForm: -1,
+          ParamBrowRForm: -1,
+          ParamBrowLAngle: -0.9,
+          ParamBrowRAngle: 0.9,
+          ParamCheek: 0.45,
+          ParamAngleZ: 12,
+          ParamBodyAngleZ: 8,
+          ParamShoulder: 0.5,
+        },
+        motionGroup: "TapBody",
       };
     case "listening":
       return {

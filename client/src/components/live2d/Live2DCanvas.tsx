@@ -43,6 +43,7 @@ export type Live2DHandle = {
   setMouth: (value: number) => void;
   speakAudio: (url: string) => Promise<void>;
   stopAudio: () => void;
+  playReact: (emotion?: MessageEmotion) => void;
 };
 
 type Props = {
@@ -188,6 +189,12 @@ export function Live2DCanvas({
           stopAudio: () => {
             model.stopSpeaking?.();
             mouthRef.current = 0;
+          },
+          playReact: (nextEmotion) => {
+            const current = modelRef.current;
+            if (!current) return;
+            const preset = nextEmotion ? emotionToPreset(nextEmotion) : null;
+            void current.motion(preset?.motionGroup ?? "TapBody", preset?.motionIndex);
           },
         };
         onReadyRef.current?.(handle);

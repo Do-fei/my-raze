@@ -3,6 +3,8 @@ import {
   estimateSpeechDurationMs,
   inferEmotionFromText,
   isOfficialLive2DCompanion,
+  nextPlayfulEmotion,
+  PLAYFUL_EMOTIONS,
   resolveAvatarPhase,
   resolveExpression,
   resolveMessageEmotion,
@@ -10,6 +12,7 @@ import {
   computeLive2DLayout,
   simulatedMouthValue,
   stripLive2DEmotionTag,
+  emotionToPreset,
 } from "./live2d";
 
 describe("stripLive2DEmotionTag", () => {
@@ -92,6 +95,45 @@ describe("resolveExpression", () => {
 
   it("falls back to mood when there is no message emotion", () => {
     expect(resolveExpression({ phase: "idle", mood: "lonely" })).toBe("sad");
+  });
+
+  it("lets a playful tap override chat emotion except while listening", () => {
+    expect(
+      resolveExpression({
+        phase: "idle",
+        mood: "happy",
+        messageEmotion: "neutral",
+        userOverride: "tantrum",
+      })
+    ).toBe("tantrum");
+    expect(
+      resolveExpression({
+        phase: "listening",
+        mood: "happy",
+        messageEmotion: "neutral",
+        userOverride: "flirty",
+      })
+    ).toBe("listening");
+  });
+});
+
+describe("playful tap cycle", () => {
+  it("starts at angry and walks through shy / flirty / cry / tantrum", () => {
+    expect(nextPlayfulEmotion(null)).toBe("angry");
+    expect(nextPlayfulEmotion("angry")).toBe("shy");
+    expect(nextPlayfulEmotion("shy")).toBe("flirty");
+    expect(nextPlayfulEmotion("flirty")).toBe("sad");
+    expect(nextPlayfulEmotion("sad")).toBe("tantrum");
+    expect(nextPlayfulEmotion("tantrum")).toBe("angry");
+    expect(PLAYFUL_EMOTIONS).toEqual(["angry", "shy", "flirty", "sad", "tantrum"]);
+  });
+
+  it("gives flirty and tantrum distinct face presets", () => {
+    expect(emotionToPreset("flirty").params.ParamCheek).toBe(1);
+    expect(emotionToPreset("tantrum").params.ParamMouthForm).toBe(-1);
+    expect(stripLive2DEmotionTag("哼 [[emotion:tantrum]]").emotion).toBe("tantrum");
+    expect(inferEmotionFromText("我要发脾气了")).toBe("tantrum");
+    expect(inferEmotionFromText("人家要撒娇")).toBe("flirty");
   });
 });
 

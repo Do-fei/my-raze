@@ -1,13 +1,20 @@
 import {
+  MESSAGE_EMOTION_LABELS,
   OFFICIAL_LIVE2D_MODEL,
+  PLAYFUL_EMOTION_LABELS,
+  PLAYFUL_EMOTIONS,
+  PLAYFUL_OVERRIDE_MS,
+  nextPlayfulEmotion,
   resolveAvatarPhase,
   resolveExpression,
   type CompanionMood,
   type MessageEmotion,
+  type PlayfulEmotion,
 } from "@shared/live2d";
 import { Loader2 } from "lucide-react";
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supportsLive2DStage } from "@/lib/cubism-core";
+import { cn } from "@/lib/utils";
 import type { Live2DHandle } from "./Live2DCanvas";
 
 const Live2DCanvas = lazy(() =>
@@ -74,6 +81,9 @@ export function Live2DStage({
   onReady,
 }: Props) {
   const [failed, setFailed] = useState(false);
+  const [userOverride, setUserOverride] = useState<PlayfulEmotion | null>(null);
+  const [overrideTick, setOverrideTick] = useState(0);
+  const handleRef = useRef<Live2DHandle | null>(null);
   const support = useMemo(() => supportsLive2DStage(), []);
   const reducedMotion = support.reason === "reduced-motion";
   const phase = resolveAvatarPhase({
@@ -82,8 +92,41 @@ export function Live2DStage({
     isThinking,
     isSpeaking,
   });
-  const emotion = resolveExpression({ phase, mood, messageEmotion });
+  const emotion = resolveExpression({
+    phase,
+    mood,
+    messageEmotion,
+    userOverride,
+  });
   const useCanvas = support.ok && !failed;
+
+  useEffect(() => {
+    setUserOverride(null);
+  }, [messageEmotion]);
+
+  useEffect(() => {
+    if (!userOverride) return;
+    const timer = window.setTimeout(() => setUserOverride(null), PLAYFUL_OVERRIDE_MS);
+    return () => window.clearTimeout(timer);
+  }, [userOverride, overrideTick]);
+
+  const handleReady = useCallback(
+    (next: Live2DHandle) => {
+      handleRef.current = next;
+      onReady?.(next);
+    },
+    [onReady]
+  );
+
+  const playPlayful = useCallback((next: PlayfulEmotion) => {
+    setUserOverride(next);
+    setOverrideTick((tick) => tick + 1);
+    handleRef.current?.playReact(next);
+  }, []);
+
+  const handleHit = useCallback(() => {
+    setUserOverride((prev) => nextPlayfulEmotion(prev));
+  }, []);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-b from-violet-50/80 to-background dark:from-violet-950/50">
@@ -100,8 +143,9 @@ export function Live2DStage({
             emotion={emotion}
             mood={mood}
             reducedMotion={reducedMotion}
-            onReady={onReady}
+            onReady={handleReady}
             onFail={() => setFailed(true)}
+            onHit={handleHit}
           />
         </Suspense>
       ) : (
@@ -117,10 +161,31 @@ export function Live2DStage({
       )}
 
       <div className="pointer-events-none absolute left-2 top-2 rounded-full bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground backdrop-blur">
-        {PHASE_LABEL[phase]} · {emotion}
+        {PHASE_LABEL[phase]} · {MESSAGE_EMOTION_LABELS[emotion]}
       </div>
-      <p className="pointer-events-none absolute bottom-1.5 left-0 right-0 text-center text-[10px] text-muted-foreground/80">
-        {OFFICIAL_LIVE2D_MODEL.label}
+
+      {useCanvas && (
+        <div className="absolute bottom-6 left-1 right-1 z-10 flex flex-wrap justify-center gap-1 px-1">
+          {PLAYFUL_EMOTIONS.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => playPlayful(item)}
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[10px] leading-5 shadow-sm backdrop-blur transition-colors",
+                userOverride === item
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background/80 text-foreground hover:bg-background"
+              )}
+            >
+              {PLAYFUL_EMOTION_LABELS[item]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="pointer-events-none absolute bottom-1 left-0 right-0 text-center text-[10px] text-muted-foreground/80">
+        {useCanvas ? "点她或点下面的按钮看表情" : OFFICIAL_LIVE2D_MODEL.label}
       </p>
     </div>
   );
