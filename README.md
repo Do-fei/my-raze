@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/brand/raze-mascot.jpg" alt="Raze" width="240" />
+
 # My Raze ✨
 
 **你的 AI 虚拟女友 — 她记得你、给你发自拍、你的对话从不拿去训练模型**
