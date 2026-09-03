@@ -5,8 +5,6 @@ import {
   PLAYFUL_EMOTIONS,
   PLAYFUL_OVERRIDE_MS,
   nextPlayfulEmotion,
-  resolveAvatarPhase,
-  resolveExpression,
   type CompanionMood,
   type MessageEmotion,
   type PlayfulEmotion,
@@ -16,6 +14,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { supportsLive2DStage } from "@/lib/cubism-core";
 import { cn } from "@/lib/utils";
 import type { Live2DHandle } from "./Live2DCanvas";
+import { useAvatarController } from "./useAvatarController";
 
 const Live2DCanvas = lazy(() =>
   import("./Live2DCanvas").then((m) => ({ default: m.Live2DCanvas }))
@@ -86,14 +85,11 @@ export function Live2DStage({
   const handleRef = useRef<Live2DHandle | null>(null);
   const support = useMemo(() => supportsLive2DStage(), []);
   const reducedMotion = support.reason === "reduced-motion";
-  const phase = resolveAvatarPhase({
+  const { phase, emotion } = useAvatarController({
     isRecording,
     isTranscribing,
     isThinking,
     isSpeaking,
-  });
-  const emotion = resolveExpression({
-    phase,
     mood,
     messageEmotion,
     userOverride,

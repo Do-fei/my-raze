@@ -112,7 +112,7 @@
 
 官方角色 Raze 的聊天页现在带 Live2D 舞台：视线跟随、点击互动、倾听/思考/说话四态，以及按心情和回复情绪切换的表情。点她或点底部按钮可以看叉腰生气、害羞、比心、哭鼻子、跳起来。API 语音会按音量张嘴；浏览器内置语音用模拟口型。设置里可以改回静态立绘。自建角色仍用照片（Live2D 授权不允许用户导入模型）。
 
-开发版暂用官方示例模型 Hiyori 占位，正式看板娘 `.moc3` 到位后只需替换 `client/public/live2d/official/`。详见 [`client/public/live2d/NOTICE.md`](client/public/live2d/NOTICE.md)。
+开发版暂用官方示例模型 Hiyori 占位，正式看板娘 `.moc3` 到位后只需替换 `client/public/live2d/official/`。详见 [`client/public/live2d/NOTICE.md`](client/public/live2d/NOTICE.md) 与 [建模委托清单](docs/live2d/commission-brief.md)。
 
 <div align="center">
 

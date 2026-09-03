@@ -21,4 +21,6 @@ https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js
 `official/` 目录是 Live2D 官方 CubismWebSamples 中的 Hiyori 示例，用作开发占位。
 正式看板娘模型到位后，只替换该目录并改 `shared/live2d.ts` 里的 `OFFICIAL_LIVE2D_MODEL` 路径即可。
 
+委托规格见 [`docs/live2d/commission-brief.md`](../../../docs/live2d/commission-brief.md)（12 套材料库 + 嵌入文件清单）。渲染库选型见 [`docs/live2d/SPIKE.md`](../../../docs/live2d/SPIKE.md)。
+
 请遵守 Live2D 示例数据使用条款：https://www.live2d.com/en/terms/live2d-sample-data-terms-of-use/

@@ -13,6 +13,7 @@
 - API 语音 RMS 口型同步；浏览器 TTS 使用模拟口型
 - 设置页「启用 Live2D」开关；`prefers-reduced-motion` / 无 WebGL 时降级为静态立绘
 - 开发占位模型：Live2D 官方示例 Hiyori（正式模型替换 `client/public/live2d/official/` 即可）
+- nizima 建模委托清单：`docs/live2d/commission-brief.md`（12 套材料库）
 
 ### 工程
 - Cubism Core 不入库，运行时走本地文件或官方 CDN（`pnpm live2d:core`）
