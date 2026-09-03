@@ -102,6 +102,14 @@ function getDriver(): EmailDriver {
   const provider = (process.env.EMAIL_PROVIDER ?? "").toLowerCase();
   const from = process.env.EMAIL_FROM ?? "noreply@my-raze.local";
 
+  if (provider === "stdout") {
+    log.warn(
+      "[email] EMAIL_PROVIDER=stdout — magic-link will be printed to logs (preview only)"
+    );
+    cachedDriver = new StdoutDriver();
+    return cachedDriver;
+  }
+
   if (provider === "smtp") {
     const host = process.env.SMTP_HOST;
     const port = parseInt(process.env.SMTP_PORT ?? "587", 10);

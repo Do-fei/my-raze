@@ -135,6 +135,18 @@ describe("env validation (issue #6)", () => {
     );
   });
 
+  it("accepts EMAIL_PROVIDER=stdout as a production preview driver", async () => {
+    process.env.JWT_SECRET = "x".repeat(64);
+    process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
+    process.env.DATABASE_URL = "mysql://x";
+    process.env.NODE_ENV = "production";
+    process.env.EMAIL_FROM = "noreply@example.com";
+    process.env.EMAIL_PROVIDER = "stdout";
+    process.env.BETTER_AUTH_URL = "https://raze.example.com";
+    const { ENV } = await import("./env");
+    expect(ENV.isProduction).toBe(true);
+  });
+
   it("accepts SMTP as the production email driver", async () => {
     process.env.JWT_SECRET = "x".repeat(64);
     process.env.KEY_ENCRYPTION_KEY = "y".repeat(64);
