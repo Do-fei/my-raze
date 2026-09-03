@@ -16,7 +16,7 @@
 [![Tests](https://img.shields.io/badge/Tests-287_passed-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[遇见她们](#-遇见她们) · [产品演示](#-产品演示) · [快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点) · [为什么选择 My Raze](#-为什么选择-my-raze)
+[遇见她们](#-遇见她们) · [产品演示](#-产品演示) · [Live2D](#-下一版重点live2d-实时互动) · [快速开始](#-快速开始-docker-一键部署) · [功能亮点](#-功能亮点)
 
 </div>
 
@@ -107,6 +107,28 @@
 *首页女友卡片 → 对话界面 → Lv.5 亲密度详情 → 「她记得你的事」*
 
 </div>
+
+### 💗 下一版重点：Live2D 实时互动
+
+她不只是头像——**会听、会动、会闹脾气**。下一版将把 Live2D 立绘嵌进聊天页：你说话时她侧耳倾听，点她会比心，冷落她会生气，撒娇要你陪，委屈了还会哭。
+
+<div align="center">
+
+<img src="docs/screenshots/demo_live2d.gif" alt="Live2D 表情演示：倾听、交互、撒娇、生气、哭泣" width="420" />
+
+*倾听 → 交互比心 → 撒娇 → 生气 → 哭泣 · 同一看板娘，五种情绪*
+
+</div>
+
+<table>
+<tr>
+<td width="20%" align="center"><img src="docs/live2d/listen.jpg" alt="倾听" width="160" /><br/><sub>🎧 倾听</sub></td>
+<td width="20%" align="center"><img src="docs/live2d/interact.jpg" alt="交互" width="160" /><br/><sub>💕 交互</sub></td>
+<td width="20%" align="center"><img src="docs/live2d/spoiled.jpg" alt="撒娇" width="160" /><br/><sub>🥺 撒娇</sub></td>
+<td width="20%" align="center"><img src="docs/live2d/angry.jpg" alt="生气" width="160" /><br/><sub>💢 生气</sub></td>
+<td width="20%" align="center"><img src="docs/live2d/cry.jpg" alt="哭泣" width="160" /><br/><sub>😢 哭泣</sub></td>
+</tr>
+</table>
 
 <br/>
 
