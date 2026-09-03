@@ -286,6 +286,31 @@ export function estimateSpeechDurationMs(text: string, speed: number): number {
   return Math.min(20_000, Math.max(800, (chars * 180) / safeSpeed));
 }
 
+/**
+ * Fit a Live2D model into the stage using its *unscaled* canvas size.
+ * Never pass PIXI's live `width`/`height` here — those already include scale
+ * and will blow up on every resize (the "only a torso" bug).
+ */
+export function computeLive2DLayout(
+  viewW: number,
+  viewH: number,
+  modelW: number,
+  modelH: number
+): { scale: number; x: number; y: number; anchorX: number; anchorY: number } {
+  const canvasW = modelW > 8 ? modelW : 2048;
+  const canvasH = modelH > 8 ? modelH : 2048;
+  const padding = 0.9;
+  const raw = Math.min(viewW / canvasW, viewH / canvasH) * padding;
+  const scale = Math.min(Math.max(raw, 0.04), 1.2);
+  return {
+    scale,
+    x: viewW / 2,
+    y: viewH - 6,
+    anchorX: 0.5,
+    anchorY: 1,
+  };
+}
+
 export function simulatedMouthValue(elapsedMs: number, durationMs: number): number {
   if (elapsedMs < 0 || elapsedMs > durationMs) return 0;
   const t = elapsedMs / 1000;

@@ -7,6 +7,7 @@ import {
   resolveExpression,
   resolveMessageEmotion,
   shouldEnableLive2D,
+  computeLive2DLayout,
   simulatedMouthValue,
   stripLive2DEmotionTag,
 } from "./live2d";
@@ -112,6 +113,28 @@ describe("official companion + preference", () => {
     expect(shouldEnableLive2D(null)).toBe(true);
     expect(shouldEnableLive2D("false")).toBe(false);
     expect(shouldEnableLive2D("true")).toBe(true);
+  });
+});
+
+describe("computeLive2DLayout", () => {
+  it("fits the unscaled canvas into the view without blowing up", () => {
+    const layout = computeLive2DLayout(400, 800, 2048, 2048);
+    expect(layout.scale).toBeLessThan(0.5);
+    expect(layout.scale).toBeGreaterThan(0.1);
+    expect(layout.anchorY).toBe(1);
+    expect(layout.x).toBe(200);
+  });
+
+  it("does not grow when called again with the same canvas size", () => {
+    const a = computeLive2DLayout(400, 800, 2048, 2048);
+    const b = computeLive2DLayout(400, 800, 2048, 2048);
+    expect(a.scale).toBe(b.scale);
+  });
+
+  it("falls back when the reported size is nonsense", () => {
+    const layout = computeLive2DLayout(400, 800, 0, 0);
+    expect(layout.scale).toBeGreaterThan(0);
+    expect(layout.scale).toBeLessThan(1);
   });
 });
 

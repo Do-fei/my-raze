@@ -1,4 +1,5 @@
 import {
+  computeLive2DLayout,
   CUBISM_CORE_CDN,
   emotionToPreset,
   OFFICIAL_LIVE2D_MODEL,
@@ -19,6 +20,13 @@ type EngineModel = {
   scale: { set: (x: number, y?: number) => void };
   width: number;
   height: number;
+  internalModel?: {
+    coreModel?: CoreModel;
+    originalWidth?: number;
+    originalHeight?: number;
+    width?: number;
+    height?: number;
+  };
   focus: (x: number, y: number, instant?: boolean) => void;
   tap: (x: number, y: number) => void;
   motion: (group: string, index?: number) => Promise<boolean>;
@@ -29,7 +37,6 @@ type EngineModel = {
   stopSpeaking?: () => void;
   destroy: (options?: { children?: boolean }) => void;
   on: (event: string, fn: (...args: unknown[]) => void) => void;
-  internalModel?: { coreModel?: CoreModel };
 };
 
 export type Live2DHandle = {
@@ -60,15 +67,19 @@ function applyParams(model: EngineModel | null, params: Record<string, number>) 
   }
 }
 
-function layoutModel(
-  model: EngineModel,
-  width: number,
-  height: number
-) {
-  const scale = Math.min(width / model.width, height / model.height) * 1.15;
-  model.scale.set(scale);
-  model.anchor.set(0.5, 0.55);
-  model.position.set(width / 2, height * 0.62);
+function intrinsicModelSize(model: EngineModel): { w: number; h: number } {
+  const internal = model.internalModel;
+  const w = internal?.originalWidth || internal?.width || 2048;
+  const h = internal?.originalHeight || internal?.height || 2048;
+  return { w, h };
+}
+
+function layoutModel(model: EngineModel, viewW: number, viewH: number) {
+  const { w, h } = intrinsicModelSize(model);
+  const layout = computeLive2DLayout(viewW, viewH, w, h);
+  model.scale.set(layout.scale);
+  model.anchor.set(layout.anchorX, layout.anchorY);
+  model.position.set(layout.x, layout.y);
 }
 
 export function Live2DCanvas({
