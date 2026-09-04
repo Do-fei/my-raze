@@ -2,7 +2,7 @@
 
 记录本次 Cloud Agent 接手以后实际落地的内容，以及接下来按什么顺序做。日期：2026-09-04。
 
-产品源码仓库是 [Do-fei/my-raze](https://github.com/Do-fei/my-raze)。独立官网另仓：[Do-fei/my-raze-official-site](https://github.com/Do-fei/my-raze-official-site)。官网**没有**并进本仓库。
+产品源码仓库是 [Do-fei/my-raze](https://github.com/Do-fei/my-raze)。独立官网**没有**并进本仓库；源码已部署到 EdgeOne / Railway，接到你自己的 GitHub 需要你新建空仓（建议名 `my-raze-official-site`）或在本次会话点 Create repo。
 
 ---
 
