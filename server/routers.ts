@@ -1,3 +1,4 @@
+import { openRouterFailure, verifyOpenRouterKey } from "./_core/openrouterAuth";
 import { getSessionCookieOptions } from "./_core/cookies";
 import {
   keyProvider,
@@ -686,8 +687,9 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
               ? messageContent
               : JSON.stringify(messageContent);
         } catch (error) {
-          console.error("[Chat] LLM API error:", error);
-          aiResponse = "抱歉，我现在有点累了，稍后再聊吧~";
+          const failure = openRouterFailure(error);
+          console.error("[Chat] LLM API error:", { status: failure.status ?? "unavailable" });
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: failure.message });
         }
 
         // 8. 保存 AI 回复（剥掉 Live2D 表情标签，避免出现在气泡里）
@@ -1266,6 +1268,17 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         await keyProvider.setUserKey(ctx.user.id, input.name, input.value);
         return { ok: true as const };
       }),
+
+    verifyOpenRouterKey: protectedProcedure.mutation(async ({ ctx }) => {
+      const key = await keyProvider.get({ userId: ctx.user.id }, "openrouter");
+      if (!key) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "尚未配置 OpenRouter Key" });
+      try {
+        await verifyOpenRouterKey(key);
+      } catch (error) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: (error as Error).message });
+      }
+      return { ok: true as const };
+    }),
 
     // Remove a user's BYOK key. After this, calls fall back to operator
     // default (or fail if no operator key is configured).

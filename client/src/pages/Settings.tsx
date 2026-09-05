@@ -120,7 +120,7 @@ export default function Settings() {
   const { data: apiConfig, isLoading } = trpc.apiConfig.get.useQuery();
 
   // OpenRouter 模型列表（Phase 1b-i：服务端解析密钥，前端不再传 apiKey）
-  const openRouterReady = !!apiConfig?.keys.openrouter.isSet || openRouterKey.length > 10;
+  const openRouterReady = !!apiConfig?.keys.openrouter.isSet;
   const { data: modelsData, isLoading: modelsLoading, error: modelsError } = trpc.apiConfig.listModels.useQuery(
     undefined,
     { enabled: openRouterReady, retry: false }
@@ -143,13 +143,18 @@ export default function Settings() {
   // Phase 1b-i (issue #2): preferences vs keys are now separate mutations.
   const updatePreferences = trpc.apiConfig.updatePreferences.useMutation({
     onSuccess: () => {
-      toast.success("配置保存成功");
+      void utils2.apiConfig.get.invalidate();
     },
     onError: (error) => {
       toast.error(`保存失败：${error.message}`);
     },
   });
 
+  const [openRouterVerification, setOpenRouterVerification] = useState("未验证");
+  const verifyOpenRouter = trpc.apiConfig.verifyOpenRouterKey.useMutation({
+    onSuccess: () => setOpenRouterVerification("认证通过（不代表有可用余额或模型权限）"),
+    onError: (error) => setOpenRouterVerification(error.message),
+  });
   const setKeyMutation = trpc.apiConfig.setKey.useMutation();
   const clearKeyMutation = trpc.apiConfig.clearKey.useMutation();
   const utils2 = trpc.useUtils();
@@ -157,7 +162,7 @@ export default function Settings() {
   /**
    * Save any non-empty BYOK keys the user has typed in. Each `setKey` is
    * a separate mutation so a single bad key doesn't drop the others.
-   * Returns the count of successfully saved keys, for the toast.
+   * Returns whether all pending keys were saved successfully.
    */
   async function saveDirtyKeys() {
     const pending: Array<{ name: "openrouter" | "fal" | "elevenlabs" | "fish-audio" | "openai"; value: string }> = [];
@@ -168,26 +173,25 @@ export default function Settings() {
     if (whisperApiKey) pending.push({ name: "openai", value: whisperApiKey });
 
     let saved = 0;
+    let failed = false;
     for (const { name, value } of pending) {
       try {
         await setKeyMutation.mutateAsync({ name, value });
         saved++;
+        if (name === "openrouter") { setOpenRouterKey(""); setOpenRouterVerification("认证通过（不代表有可用余额或模型权限）"); }
+        if (name === "fal") setFalApiKey("");
+        if (name === "elevenlabs") setElevenlabsApiKey("");
+        if (name === "fish-audio") setFishAudioApiKey("");
+        if (name === "openai") setWhisperApiKey("");
       } catch (err: any) {
+        failed = true;
         toast.error(`${name} 密钥保存失败：${err?.message ?? "unknown"}`);
       }
     }
     if (saved > 0) {
-      // Clear in-memory plaintext copies so they don't linger in the
-      // React tree. The fresh `apiConfig.get` invalidation refreshes
-      // the masked `keys` map for display.
-      setOpenRouterKey("");
-      setFalApiKey("");
-      setElevenlabsApiKey("");
-      setFishAudioApiKey("");
-      setWhisperApiKey("");
       utils2.apiConfig.get.invalidate();
     }
-    return saved;
+    return !failed;
   }
 
   // TTS 测试
@@ -290,7 +294,8 @@ export default function Settings() {
       replyLanguage: replyLanguage || null,
       replyLengthLimit: replyLengthLimit || null,
     });
-    await saveDirtyKeys();
+    if (!(await saveDirtyKeys())) return;
+    toast.success("配置保存成功");
   };
 
   const handleTtsToggle = useCallback((checked: boolean) => {
@@ -347,7 +352,7 @@ export default function Settings() {
     await updatePreferences.mutateAsync({
       llmModel: selectedModel || undefined,
     });
-    await saveDirtyKeys();
+    if (!(await saveDirtyKeys())) return;
     setHasUnsavedLlmChanges(false);
     toast.success("LLM 配置已保存生效");
   };
@@ -376,7 +381,7 @@ export default function Settings() {
       fishAudioModelId: fishAudioModelId || undefined,
       fishAudioModelName: fishAudioModelName || undefined,
     });
-    await saveDirtyKeys();
+    if (!(await saveDirtyKeys())) return;
     setHasUnsavedVoiceChanges(false);
     toast.success("语音配置已保存生效");
   };
@@ -385,7 +390,7 @@ export default function Settings() {
     await updatePreferences.mutateAsync({
       whisperProvider,
     });
-    await saveDirtyKeys();
+    if (!(await saveDirtyKeys())) return;
     setHasUnsavedWhisperChanges(false);
     toast.success("语音转写配置已保存生效");
   };
@@ -449,14 +454,6 @@ export default function Settings() {
     (falApiKey.length >= 10);
 
   // API Key 有效性状态派生
-  const openRouterKeyStatus = useMemo(() => {
-    if (!openRouterKey || openRouterKey.length <= 10) return "empty";
-    if (modelsLoading) return "loading";
-    if (modelsError) return "invalid";
-    if (modelsData) return "valid";
-    return "loading";
-  }, [openRouterKey, modelsLoading, modelsError, modelsData]);
-
   const elevenLabsKeyStatus = useMemo(() => {
     if (!elevenlabsApiKey || elevenlabsApiKey.length <= 10) return "empty";
     if (elevenLabsLoading) return "loading";
@@ -512,7 +509,7 @@ export default function Settings() {
   const handleSaveFalConfig = async () => {
     // No fal-specific preference fields beyond the encrypted key, so this
     // handler only saves dirty BYOK keys.
-    await saveDirtyKeys();
+    if (!(await saveDirtyKeys())) return;
     setHasUnsavedFalChanges(false);
     toast.success("fal.ai 配置已保存生效");
   };
@@ -1242,12 +1239,12 @@ export default function Settings() {
                 <div className="space-y-2">
                   <Label htmlFor="openRouterKey" className="flex items-center justify-between">
                     <span>OpenRouter API Key</span>
-                    <KeyStatusIndicator status={openRouterKeyStatus} />
+                    <span className="text-xs text-muted-foreground">{openRouterKey ? "待保存并验证" : openRouterVerification}</span>
                   </Label>
                   <Input
                     id="openRouterKey"
                     type="password"
-                    placeholder="sk-or-v1-xxxxxxxxxxxx"
+                    placeholder={apiConfig?.keys.openrouter.isSet ? "已保存；留空保留现有 Key" : "sk-or-v1-xxxxxxxxxxxx"}
                     value={openRouterKey}
                     onChange={(e) => {
                       setOpenRouterKey(e.target.value);
@@ -1255,10 +1252,15 @@ export default function Settings() {
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    留空则使用运营方的 OpenRouter 密钥（按套餐额度，免费档锁定 gpt-4o-mini）。
+                    已保存 Key 时留空会保留现有 Key；未保存时使用运营方配置。模型列表不用于验证 Key。
                     填入自己的 Key 后走你自己的账户、不占额度，并可自由选择模型。
                   </p>
                 </div>
+
+                <Button variant="outline" disabled={!apiConfig?.keys.openrouter.isSet || !!openRouterKey || verifyOpenRouter.isPending}
+                  onClick={() => verifyOpenRouter.mutate()}>
+                  {verifyOpenRouter.isPending ? "正在验证…" : "验证已保存的 Key（不生成内容）"}
+                </Button>
 
                 {openRouterKey.length > 10 && modelsLoading && (
                   <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">

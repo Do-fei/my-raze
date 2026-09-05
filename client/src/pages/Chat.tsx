@@ -342,6 +342,7 @@ export default function Chat() {
       scrollToBottom();
     },
     onError: (error) => {
+      void refetchMessages();
       if (error.message.startsWith("UPGRADE_REQUIRED")) {
         toast.error("当前套餐不支持此功能，去设置查看订阅选项", {
           action: { label: "去设置", onClick: () => setLocation("/settings") },
