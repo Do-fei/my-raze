@@ -22,6 +22,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
+import { useStageCollapsed } from "@/hooks/useStageCollapsed";
 import { useLive2DPreference } from "@/hooks/useLive2DPreference";
 import { useLipSync } from "@/hooks/useLipSync";
 import { VoiceRecordButton } from "@/components/VoiceRecordButton";
@@ -49,7 +50,7 @@ const SPEED_OPTIONS = [
   { value: 2, label: "2x" },
 ];
 
-function useTTS(lip?: {
+export function useTTS(lip?: {
   onBrowserSpeak?: (text: string, speed: number) => void;
   onAudio?: (audio: HTMLAudioElement) => void;
   onStop?: () => void;
@@ -93,7 +94,10 @@ function useTTS(lip?: {
       toast.error("当前浏览器不支持语音功能");
       return;
     }
+    utteranceRef.current = null;
     window.speechSynthesis.cancel();
+    lipRef.current?.onStop?.();
+    setIsSpeaking(false);
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "zh-CN";
     utterance.rate = playbackSpeed * 0.95; // 基础速度 0.95 * 用户选择的倍速
@@ -110,12 +114,21 @@ function useTTS(lip?: {
     );
     const zhVoice = zhFemaleVoice || voices.find((v) => v.lang.startsWith("zh"));
     if (zhVoice) utterance.voice = zhVoice;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onstart = () => {
+      if (utteranceRef.current !== utterance) return;
+      setIsSpeaking(true);
+      lipRef.current?.onBrowserSpeak?.(text, playbackSpeed);
+    };
+    const finish = () => {
+      if (utteranceRef.current !== utterance) return;
+      utteranceRef.current = null;
+      setIsSpeaking(false);
+      lipRef.current?.onStop?.();
+    };
+    utterance.onend = finish;
+    utterance.onerror = finish;
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
-    lipRef.current?.onBrowserSpeak?.(text, playbackSpeed);
   }, [playbackSpeed]);
 
   // API 语音（ElevenLabs / Fish Audio）
@@ -165,13 +178,21 @@ function useTTS(lip?: {
   );
 
   const stop = useCallback(() => {
-    window.speechSynthesis.cancel();
+    utteranceRef.current = null;
+    window.speechSynthesis?.cancel();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
     lipRef.current?.onStop?.();
     setIsSpeaking(false);
+  }, []);
+
+  useEffect(() => () => {
+    utteranceRef.current = null;
+    window.speechSynthesis?.cancel();
+    audioRef.current?.pause();
+    lipRef.current?.onStop?.();
   }, []);
 
   const toggleAutoPlay = useCallback(() => {
@@ -198,7 +219,7 @@ export default function Chat() {
     onStop: lipSync.stop,
   });
   const { enabled: live2dPref } = useLive2DPreference();
-  const [stageCollapsed, setStageCollapsed] = useState(false);
+  const [stageCollapsed, setStageCollapsed] = useStageCollapsed();
   const [messageEmotion, setMessageEmotion] = useState<MessageEmotion | null>(null);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 

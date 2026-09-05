@@ -31,13 +31,13 @@ export function useLipSync() {
     targetRef.current = target;
   }, []);
 
-  const runSimulated = useCallback((durationMs: number) => {
+  const runSimulated = useCallback((durationMs: number, continuous = false) => {
     cancelAnimationFrame(rafRef.current);
     const started = performance.now();
     const tick = () => {
       const elapsed = performance.now() - started;
-      targetRef.current?.setMouth(simulatedMouthValue(elapsed, durationMs));
-      if (elapsed < durationMs) {
+      targetRef.current?.setMouth(simulatedMouthValue(continuous ? elapsed % durationMs : elapsed, durationMs));
+      if (continuous || elapsed < durationMs) {
         rafRef.current = requestAnimationFrame(tick);
       } else {
         targetRef.current?.setMouth(0);
@@ -49,7 +49,7 @@ export function useLipSync() {
   const speakSimulated = useCallback(
     (text: string, speed: number) => {
       stop();
-      runSimulated(estimateSpeechDurationMs(text, speed));
+      runSimulated(estimateSpeechDurationMs(text, speed), true);
     },
     [runSimulated, stop]
   );

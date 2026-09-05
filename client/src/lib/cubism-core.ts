@@ -6,25 +6,40 @@ declare global {
   }
 }
 
+const pendingScripts = new Map<string, Promise<void>>();
+
 function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[data-cubism-core="${src}"]`);
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), {
-        once: true,
-      });
-      if (window.Live2DCubismCore) resolve();
-      return;
-    }
+  const pending = pendingScripts.get(src);
+  if (pending) return pending;
+
+  const promise = new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = src;
     script.async = true;
     script.dataset.cubismCore = src;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    const finish = (error?: Error) => {
+      window.clearTimeout(timer);
+      script.onload = null;
+      script.onerror = null;
+      if (error) script.remove();
+      error ? reject(error) : resolve();
+    };
+    const timer = window.setTimeout(
+      () => finish(new Error(`Timed out loading ${src}`)),
+      15_000
+    );
+    script.onload = () => finish(window.Live2DCubismCore
+      ? undefined
+      : new Error(`Cubism Core missing after loading ${src}`));
+    script.onerror = () => finish(new Error(`Failed to load ${src}`));
     document.head.appendChild(script);
   });
+  pendingScripts.set(src, promise);
+  void promise.then(
+    () => pendingScripts.delete(src),
+    () => pendingScripts.delete(src)
+  );
+  return promise;
 }
 
 /** Cubism Core is proprietary — we never bundle it in git. Local file or official CDN. */
