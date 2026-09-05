@@ -16,8 +16,8 @@ import { useEffect, useRef } from "react";
 import { ensureCubismCore } from "@/lib/cubism-core";
 
 type CoreModel = {
-  setParameterValueById?: (id: string, value: number, weight?: number) => void;
-  setPartOpacityById?: (id: string, value: number) => void;
+  setParameterValueById?: (id: unknown, value: number, weight?: number) => void;
+  setPartOpacityById?: (id: unknown, value: number) => void;
 };
 
 type EngineModel = {
@@ -28,6 +28,7 @@ type EngineModel = {
   height: number;
   internalModel?: {
     coreModel?: CoreModel;
+    getIdSafe: (id: string) => unknown;
     on: (event: string, fn: () => void) => void;
     off: (event: string, fn: () => void) => void;
     originalWidth?: number;
@@ -75,7 +76,7 @@ function applyParams(model: EngineModel | null, params: Record<string, number>) 
   if (!core?.setParameterValueById) return;
   for (const [id, value] of Object.entries(params)) {
     try {
-      core.setParameterValueById(id, value);
+      core.setParameterValueById(model!.internalModel!.getIdSafe(id), value);
     } catch {
       // Parameter may not exist on this model.
     }
@@ -87,7 +88,7 @@ function applyParts(model: EngineModel | null, parts: Record<string, number>) {
   if (!core?.setPartOpacityById) return;
   for (const [id, value] of Object.entries(parts)) {
     try {
-      core.setPartOpacityById(id, value);
+      core.setPartOpacityById(model!.internalModel!.getIdSafe(id), value);
     } catch {
       // Part may not exist on this model.
     }

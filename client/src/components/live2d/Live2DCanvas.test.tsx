@@ -12,7 +12,8 @@ vi.mock("pixi.js", () => ({ extensions: { add: vi.fn() }, Application: class {
 vi.mock("untitled-pixi-live2d-engine/cubism", () => ({ Live2DPlugin: {}, Live2DModel: { from: async () => ({
   anchor: { set: vi.fn() }, scale: { set: vi.fn() }, position: { x: 150, set: (_x: number, y: number) => { state.y = y; } },
   internalModel: { originalWidth: 1000, originalHeight: 2000,
-    coreModel: { setParameterValueById: (id: string, value: number) => state.params.set(id, value), setPartOpacityById: vi.fn() },
+    getIdSafe: (id: string) => ({ id }),
+    coreModel: { setParameterValueById: (handle: { id: string }, value: number) => { if (typeof handle === "string") throw new Error("Expected Cubism ID handle"); state.params.set(handle.id, value); }, setPartOpacityById: vi.fn() },
     on: (event: string, fn: () => void) => state.listeners.set(event, fn),
     off: (event: string) => state.listeners.delete(event),
     motionManager: { stopAllMotions: state.stops },
