@@ -1760,7 +1760,8 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
                 headers: {
                   Authorization: `Bearer ${fishKey}`,
                   "Content-Type": "application/json",
-                  model: "s1",
+                  // Explicit free model; never retry with a paid model.
+                  model: "s2.1-pro-free",
                 },
                 responseType: "arraybuffer",
                 timeout: 60_000,
@@ -1775,7 +1776,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
             return { audioUrl: url, provider: "fishaudio" as const };
           } catch (error: any) {
             console.error("[TTS] Fish Audio error:", error?.response?.status);
-            throw new Error("Fish Audio 语音生成失败");
+            throw new Error("Fish Audio 免费语音生成失败，请稍后重试；不会自动切换到付费模型");
           }
         } else {
           // browser 模式，前端处理

@@ -871,6 +871,9 @@ export default function Settings() {
                 {/* ===== Fish Audio 配置 ===== */}
                 {ttsProvider === "fishaudio" && (
                   <div className="space-y-4 pt-2 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      当前使用 S2.1 Pro 免费引擎。免费服务不可用时会提示失败，不会自动切换到付费模型。
+                    </p>
                     <div className="space-y-2">
                       <Label htmlFor="fishAudioKey" className="flex items-center justify-between">
                         <span>Fish Audio API Key</span>
@@ -1935,7 +1938,7 @@ export default function Settings() {
                 <ul className="list-disc list-inside pl-4 space-y-1">
                   <li>浏览器内置：免费，质量一般，依赖系统</li>
                   <li>ElevenLabs：$5/月起，英文极佳，支持声音克隆</li>
-                  <li>Fish Audio：按量付费，中文优化，丰富的声音库</li>
+                  <li>Fish Audio：当前接入 S2.1 Pro 免费引擎，中文优化，免费活动以服务商规则为准</li>
                 </ul>
                 <p>
                   <strong>5. 模型选择建议：</strong>
