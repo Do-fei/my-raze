@@ -134,11 +134,13 @@ export function useTTS(lip?: {
   // API 语音（ElevenLabs / Fish Audio）
   const speakApi = useCallback(
     (text: string) => {
+      const requestedAt = performance.now();
       setIsSpeaking(true);
       ttsGenerate.mutate(
         { text },
         {
           onSuccess: (data) => {
+            const receivedAt = performance.now();
             if (audioRef.current) {
               audioRef.current.pause();
               audioRef.current = null;
@@ -146,6 +148,13 @@ export function useTTS(lip?: {
             const audio = new Audio(data.audioUrl);
             audio.playbackRate = playbackSpeed;
             audioRef.current = audio;
+            audio.addEventListener("playing", () => {
+              console.info("[TTS timing]", {
+                requestMs: Math.round(receivedAt - requestedAt),
+                audioLoadMs: Math.round(performance.now() - receivedAt),
+                totalMs: Math.round(performance.now() - requestedAt),
+              });
+            }, { once: true });
             audio.onended = () => setIsSpeaking(false);
             audio.onerror = () => {
               setIsSpeaking(false);
@@ -291,7 +300,14 @@ export default function Chat() {
 
   const sendMessage = trpc.chat.sendMessage.useMutation({
     onSuccess: async (data) => {
-      await refetchMessages();
+      // Start refreshing text immediately, but do not delay TTS behind it.
+      const refreshStartedAt = performance.now();
+      const messagesRefresh = refetchMessages().then((result) => {
+        console.info("[Chat timing]", {
+          messagesRefreshMs: Math.round(performance.now() - refreshStartedAt),
+        });
+        return result;
+      });
 
       // 更新心情 - 用户消息
       if (girlfriend) {
@@ -341,6 +357,7 @@ export default function Chat() {
       }
 
       setMessage("");
+      await messagesRefresh;
       scrollToBottom();
     },
     onError: (error) => {

@@ -1736,6 +1736,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
             throw new Error("ElevenLabs 语音生成失败");
           }
         } else if (provider === "fishaudio") {
+          const startedAt = performance.now();
           const fishKey = await keyProvider.get(
             { userId: ctx.user.id },
             "fish-audio"
@@ -1749,6 +1750,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           }
 
           try {
+            const synthesisStartedAt = performance.now();
             const response = await axios.post(
               "https://api.fish.audio/v1/tts",
               {
@@ -1768,10 +1770,18 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
               }
             );
 
-            // 上传音频到 S3
+            const synthesisFinishedAt = performance.now();
+            // Persist through the configured local or S3 storage driver.
             const audioBuffer = Buffer.from(response.data);
             const fileKey = `tts-${ctx.user.id}-${nanoid()}.mp3`;
             const { url } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
+            console.info("[TTS timing]", {
+              provider: "fishaudio",
+              prepareMs: Math.round(synthesisStartedAt - startedAt),
+              synthesisMs: Math.round(synthesisFinishedAt - synthesisStartedAt),
+              storageMs: Math.round(performance.now() - synthesisFinishedAt),
+              totalMs: Math.round(performance.now() - startedAt),
+            });
 
             return { audioUrl: url, provider: "fishaudio" as const };
           } catch (error: any) {
