@@ -29,6 +29,7 @@ type Props = {
   isSpeaking?: boolean;
   mood?: CompanionMood | null;
   messageEmotion?: MessageEmotion | null;
+  replySequence?: number;
   onReady?: (handle: Live2DHandle) => void;
 };
 
@@ -77,6 +78,7 @@ export function Live2DStage({
   isSpeaking,
   mood,
   messageEmotion,
+  replySequence = 0,
   onReady,
 }: Props) {
   const [failed, setFailed] = useState(false);
@@ -98,7 +100,7 @@ export function Live2DStage({
 
   useEffect(() => {
     setUserOverride(null);
-  }, [messageEmotion]);
+  }, [messageEmotion, replySequence]);
 
   useEffect(() => {
     if (!userOverride) return;
@@ -142,6 +144,7 @@ export function Live2DStage({
           <Live2DCanvas
             phase={phase}
             emotion={emotion}
+            replySequence={replySequence}
             mood={mood}
             reducedMotion={reducedMotion}
             onReady={handleReady}

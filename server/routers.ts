@@ -1,3 +1,4 @@
+import { currentReplyStyle } from "../shared/replyStyle";
 import { configuredLlmProvider, LLM_PROVIDERS, DEEPSEEK_MODELS, llmRequestOptions } from "../shared/llmProviders";
 import { deepseekFailure, verifyDeepseekKey } from "./_core/deepseekAuth";
 import { openRouterFailure, verifyOpenRouterKey } from "./_core/openrouterAuth";
@@ -650,6 +651,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         // 避免被全局/个体提示词覆盖。
         systemPrompt += `\n${SAFETY_SYSTEM_CLAUSE}`;
         systemPrompt += `\n${LIVE2D_EMOTION_SYSTEM_CLAUSE}`;
+        systemPrompt += currentReplyStyle(input.content);
 
         // 自残/危机表达检测：命中时响应会带 safetyNotice，前端展示
         // 危机干预资源（协议全文见 docs/SAFETY.md）。

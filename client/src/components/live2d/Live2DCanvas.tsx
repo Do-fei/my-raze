@@ -28,6 +28,8 @@ type EngineModel = {
   height: number;
   internalModel?: {
     coreModel?: CoreModel;
+    on: (event: string, fn: () => void) => void;
+    off: (event: string, fn: () => void) => void;
     originalWidth?: number;
     originalHeight?: number;
     width?: number;
@@ -57,6 +59,7 @@ export type Live2DHandle = {
 type Props = {
   phase: AvatarPhase;
   emotion: MessageEmotion;
+  replySequence?: number;
   mood?: CompanionMood | null;
   reducedMotion?: boolean;
   onReady?: (handle: Live2DHandle) => void;
@@ -119,6 +122,7 @@ function layoutModel(model: EngineModel, viewW: number, viewH: number) {
 export function Live2DCanvas({
   phase,
   emotion,
+  replySequence = 0,
   reducedMotion,
   onReady,
   onFail,
@@ -163,12 +167,20 @@ export function Live2DCanvas({
   }, [emotion, reducedMotion]);
 
   useEffect(() => {
+    if (replySequence > 0 && !reducedMotion) {
+      stopModelMotions(modelRef.current);
+      startHopRef.current(emotionToPreset(emotion).hop ?? { height: 12, ms: 700, hops: 1 });
+    }
+  }, [replySequence, reducedMotion]);
+
+  useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     let disposed = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let app: any = null;
     let resizeObserver: ResizeObserver | null = null;
+    let removePoseListener: (() => void) | undefined;
 
     const boot = async () => {
       try {
@@ -225,7 +237,8 @@ export function Live2DCanvas({
           onHitRef.current?.(areas);
         });
 
-        application.ticker.add(() => {
+        // Apply after engine motion/blink/physics, immediately before core geometry update.
+        const applyPose = () => {
           const current = modelRef.current;
           if (!current) return;
           const preset = emotionToPreset(emotionRef.current);
@@ -252,7 +265,9 @@ export function Live2DCanvas({
             }
           }
           current.position.set(current.position.x, y);
-        });
+        };
+        model.internalModel?.on("beforeModelUpdate", applyPose);
+        removePoseListener = () => model.internalModel?.off("beforeModelUpdate", applyPose);
 
         const handle: Live2DHandle = {
           setMouth: (value) => {
@@ -318,6 +333,7 @@ export function Live2DCanvas({
     return () => {
       disposed = true;
       resizeObserver?.disconnect();
+      removePoseListener?.();
       try {
         modelRef.current?.destroy({ children: true });
       } catch {

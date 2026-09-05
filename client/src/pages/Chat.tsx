@@ -220,6 +220,7 @@ export default function Chat() {
   });
   const { enabled: live2dPref } = useLive2DPreference();
   const [stageCollapsed, setStageCollapsed] = useStageCollapsed();
+  const [replySequence, setReplySequence] = useState(0);
   const [messageEmotion, setMessageEmotion] = useState<MessageEmotion | null>(null);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
@@ -318,6 +319,7 @@ export default function Chat() {
 
       // 朗读 AI 回复：开启了自动播放，或这条消息来自语音输入（M4-3
       // 语音往返 —— 用语音说话，就用语音回你）。
+      setReplySequence(value => value + 1);
       if (data.emotion) {
         setMessageEmotion(data.emotion);
       }
@@ -631,6 +633,7 @@ export default function Chat() {
               isSpeaking={isSpeaking}
               mood={moodData?.mood}
               messageEmotion={messageEmotion}
+              replySequence={replySequence}
               onReady={lipSync.attach}
             />
           )}
