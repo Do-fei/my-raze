@@ -90,10 +90,12 @@ function loadEnv() {
       !!env.SMTP_HOST &&
       !!env.SMTP_USER &&
       !!env.SMTP_PASS;
+    // Preview / Railway smoke tests: magic-link is printed to logs.
+    const hasStdout = env.EMAIL_PROVIDER === "stdout";
 
-    if (!hasResend && !hasSmtp) {
+    if (!hasResend && !hasSmtp && !hasStdout) {
       issues.push(
-        "Email: Production requires either RESEND_API_KEY, or EMAIL_PROVIDER=smtp with SMTP_HOST + SMTP_USER + SMTP_PASS. See ADR 0006."
+        "Email: Production requires either RESEND_API_KEY, EMAIL_PROVIDER=smtp with SMTP_HOST + SMTP_USER + SMTP_PASS, or EMAIL_PROVIDER=stdout (preview only; link appears in logs). See ADR 0006."
       );
     }
   }

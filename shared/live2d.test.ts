@@ -1,0 +1,244 @@
+import { describe, expect, it } from "vitest";
+import {
+  estimateSpeechDurationMs,
+  inferEmotionFromText,
+  isOfficialLive2DCompanion,
+  nextPlayfulEmotion,
+  PLAYFUL_EMOTIONS,
+  resolveAvatarPhase,
+  resolveExpression,
+  resolveMessageEmotion,
+  shouldEnableLive2D,
+  computeLive2DLayout,
+  simulatedMouthValue,
+  stripLive2DEmotionTag,
+  emotionToPreset,
+  mergePoseTarget,
+  stepPoseBlend,
+} from "./live2d";
+
+describe("stripLive2DEmotionTag", () => {
+  it("pulls a trailing emotion tag and removes it from user-visible text", () => {
+    const { text, emotion } = stripLive2DEmotionTag("今晚想你了。\n[[emotion:sad]]");
+    expect(emotion).toBe("sad");
+    expect(text).toBe("今晚想你了。");
+    expect(text).not.toContain("emotion");
+  });
+
+  it("accepts spaced tags and is case-insensitive", () => {
+    expect(stripLive2DEmotionTag("哼 [[ emotion:ANGRY ]]").emotion).toBe("angry");
+  });
+
+  it("returns null emotion when the tag is missing", () => {
+    expect(stripLive2DEmotionTag("你好呀")).toEqual({ text: "你好呀", emotion: null });
+  });
+});
+
+describe("inferEmotionFromText / resolveMessageEmotion", () => {
+  it("infers angry / shy / happy from copy", () => {
+    expect(inferEmotionFromText("哼，我生气了")).toBe("angry");
+    expect(inferEmotionFromText("才、才不是喜欢你呢")).toBe("shy");
+    expect(inferEmotionFromText("今天好开心哈哈")).toBe("happy");
+  });
+
+  it("prefers the explicit tag over keyword inference", () => {
+    const resolved = resolveMessageEmotion("哈哈我好开心 [[emotion:sad]]");
+    expect(resolved.emotion).toBe("sad");
+    expect(resolved.text).toBe("哈哈我好开心");
+  });
+
+  it("falls back to inference when the model forgets the tag", () => {
+    expect(resolveMessageEmotion("人家脸红了啦").emotion).toBe("shy");
+  });
+});
+
+describe("resolveAvatarPhase", () => {
+  it("prioritizes speaking over listening and thinking", () => {
+    expect(
+      resolveAvatarPhase({
+        isSpeaking: true,
+        isRecording: true,
+        isThinking: true,
+      })
+    ).toBe("speaking");
+  });
+
+  it("maps recording and transcription to listening", () => {
+    expect(resolveAvatarPhase({ isRecording: true })).toBe("listening");
+    expect(resolveAvatarPhase({ isTranscribing: true })).toBe("listening");
+  });
+
+  it("maps pending LLM to thinking, otherwise idle", () => {
+    expect(resolveAvatarPhase({ isThinking: true })).toBe("thinking");
+    expect(resolveAvatarPhase({})).toBe("idle");
+  });
+});
+
+describe("resolveExpression", () => {
+  it("forces listening expression while the user is talking", () => {
+    expect(
+      resolveExpression({
+        phase: "listening",
+        mood: "happy",
+        messageEmotion: "angry",
+      })
+    ).toBe("listening");
+  });
+
+  it("uses message emotion over mood wash when idle", () => {
+    expect(
+      resolveExpression({
+        phase: "idle",
+        mood: "sad",
+        messageEmotion: "happy",
+      })
+    ).toBe("happy");
+  });
+
+  it("falls back to mood when there is no message emotion", () => {
+    expect(resolveExpression({ phase: "idle", mood: "lonely" })).toBe("sad");
+  });
+
+  it("lets a playful tap override chat emotion except while listening", () => {
+    expect(
+      resolveExpression({
+        phase: "idle",
+        mood: "happy",
+        messageEmotion: "neutral",
+        userOverride: "tantrum",
+      })
+    ).toBe("tantrum");
+    expect(
+      resolveExpression({
+        phase: "listening",
+        mood: "happy",
+        messageEmotion: "neutral",
+        userOverride: "flirty",
+      })
+    ).toBe("listening");
+  });
+});
+
+describe("playful tap cycle", () => {
+  it("starts at angry and walks through shy / flirty / cry / tantrum", () => {
+    expect(nextPlayfulEmotion(null)).toBe("angry");
+    expect(nextPlayfulEmotion("angry")).toBe("shy");
+    expect(nextPlayfulEmotion("shy")).toBe("flirty");
+    expect(nextPlayfulEmotion("flirty")).toBe("sad");
+    expect(nextPlayfulEmotion("sad")).toBe("tantrum");
+    expect(nextPlayfulEmotion("tantrum")).toBe("angry");
+    expect(PLAYFUL_EMOTIONS).toEqual(["angry", "shy", "flirty", "sad", "tantrum"]);
+  });
+
+  it("gives flirty and tantrum distinct face presets", () => {
+    expect(emotionToPreset("flirty").params.ParamCheek).toBe(1);
+    expect(emotionToPreset("tantrum").params.ParamMouthForm).toBe(-1);
+    expect(stripLive2DEmotionTag("哼 [[emotion:tantrum]]").emotion).toBe("tantrum");
+    expect(inferEmotionFromText("我要发脾气了")).toBe("tantrum");
+    expect(inferEmotionFromText("人家要撒娇")).toBe("flirty");
+  });
+
+  it("uses big body poses: akimbo, heart arms, and a jump hop", () => {
+    const angry = emotionToPreset("angry");
+    expect(angry.params.ParamArmLA).toBe(10);
+    expect(angry.params.ParamArmRA).toBe(10);
+    expect(angry.parts?.PartArmA).toBe(1);
+
+    const heart = emotionToPreset("flirty");
+    expect(heart.params.ParamArmLB).toBe(10);
+    expect(heart.params.ParamArmRB).toBe(10);
+    expect(heart.parts?.PartArmB).toBe(1);
+    expect(heart.hop?.height).toBeGreaterThan(10);
+
+    const jump = emotionToPreset("tantrum");
+    expect(jump.hop?.hops).toBeGreaterThanOrEqual(3);
+    expect(jump.hop?.height).toBeGreaterThan(40);
+    expect(jump.params.ParamLeg).toBe(1);
+  });
+
+  it("eases pose params back to the rest pose", () => {
+    const target = mergePoseTarget({ ParamArmLA: 10 });
+    expect(target.ParamArmLA).toBe(10);
+    expect(target.ParamArmRA).toBe(-10);
+    expect(target.ParamCheek).toBe(0);
+    const mid = stepPoseBlend({ ParamArmLA: -10 }, { ParamArmLA: 10 }, 0.5);
+    expect(mid.ParamArmLA).toBe(0);
+  });
+});
+
+describe("official companion + preference", () => {
+  it("enables Live2D only for the default Raze slot", () => {
+    expect(
+      isOfficialLive2DCompanion({ referenceImageKey: "default-raze-user1" })
+    ).toBe(true);
+    expect(
+      isOfficialLive2DCompanion({
+        referenceImageKey: "uploads/custom.png",
+        name: "Raze",
+      })
+    ).toBe(false);
+    expect(isOfficialLive2DCompanion({ name: "桃香" })).toBe(false);
+  });
+
+  it("treats missing preference as enabled", () => {
+    expect(shouldEnableLive2D(null)).toBe(true);
+    expect(shouldEnableLive2D("false")).toBe(false);
+    expect(shouldEnableLive2D("true")).toBe(true);
+  });
+});
+
+describe("computeLive2DLayout", () => {
+  it("fits the unscaled canvas into the view without blowing up", () => {
+    const layout = computeLive2DLayout(400, 800, 2048, 2048);
+    expect(layout.scale).toBeLessThan(0.5);
+    expect(layout.scale).toBeGreaterThan(0.1);
+    expect(layout.anchorY).toBe(1);
+    expect(layout.x).toBe(200);
+  });
+
+  it("does not grow when called again with the same canvas size", () => {
+    const a = computeLive2DLayout(400, 800, 2048, 2048);
+    const b = computeLive2DLayout(400, 800, 2048, 2048);
+    expect(a.scale).toBe(b.scale);
+  });
+
+  it("falls back when the reported size is nonsense", () => {
+    const layout = computeLive2DLayout(400, 800, 0, 0);
+    expect(layout.scale).toBeGreaterThan(0);
+    expect(layout.scale).toBeLessThan(1);
+  });
+});
+
+describe("user-controlled Live2D size", () => {
+  it("enlarges a narrow ultrawide side stage while keeping feet anchored", () => {
+    const normal = computeLive2DLayout(400, 1000, 2048, 2048, 1);
+    const large = computeLive2DLayout(400, 1000, 2048, 2048, 2);
+    expect(large.scale).toBeCloseTo(normal.scale * 2);
+    expect(large.x).toBe(normal.x);
+    expect(large.y).toBe(normal.y);
+  });
+  it("caps height after resize without cumulative growth", () => {
+    const small = computeLive2DLayout(390, 300, 2048, 2048, 2.5);
+    expect(small.y - small.scale * 2048).toBeGreaterThanOrEqual(0);
+    expect(computeLive2DLayout(390, 300, 2048, 2048, 2.5)).toEqual(small);
+    expect(Number.isFinite(computeLive2DLayout(390, 300, 2048, 2048, NaN).scale)).toBe(true);
+  });
+});
+
+describe("simulated mouth envelope", () => {
+  it("is closed before and after the utterance", () => {
+    expect(simulatedMouthValue(-10, 1000)).toBe(0);
+    expect(simulatedMouthValue(1200, 1000)).toBe(0);
+  });
+
+  it("opens during the utterance", () => {
+    expect(simulatedMouthValue(400, 1000)).toBeGreaterThan(0.1);
+  });
+
+  it("scales duration with speed and text length", () => {
+    const slow = estimateSpeechDurationMs("你好呀今天过得怎么样", 0.5);
+    const fast = estimateSpeechDurationMs("你好呀今天过得怎么样", 2);
+    expect(slow).toBeGreaterThan(fast);
+    expect(estimateSpeechDurationMs("", 1)).toBe(800);
+  });
+});

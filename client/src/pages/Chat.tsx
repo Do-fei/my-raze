@@ -18,13 +18,23 @@ import {
   Mic,
   Keyboard,
   BookHeart,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
+import { useStageCollapsed } from "@/hooks/useStageCollapsed";
+import { useLive2DPreference } from "@/hooks/useLive2DPreference";
+import { useLipSync } from "@/hooks/useLipSync";
 import { VoiceRecordButton } from "@/components/VoiceRecordButton";
 import { LevelUpAnimation } from "@/components/LevelUpAnimation";
 import { IntimacyPanel } from "@/components/IntimacyPanel";
 import { SelfiePoseDialog } from "@/components/SelfiePoseDialog";
+import { Live2DStage } from "@/components/live2d/Live2DStage";
 import { getLevelInfo, getLevelProgress, getLevelGradient } from "../../../shared/intimacy";
+import {
+  isOfficialLive2DCompanion,
+  type MessageEmotion,
+} from "../../../shared/live2d";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
@@ -40,7 +50,13 @@ const SPEED_OPTIONS = [
   { value: 2, label: "2x" },
 ];
 
-function useTTS() {
+export function useTTS(lip?: {
+  onBrowserSpeak?: (text: string, speed: number) => void;
+  onAudio?: (audio: HTMLAudioElement) => void;
+  onStop?: () => void;
+}) {
+  const lipRef = useRef(lip);
+  lipRef.current = lip;
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [autoPlay, setAutoPlay] = useState(() => {
     return localStorage.getItem("tts-autoplay") === "true";
@@ -78,7 +94,10 @@ function useTTS() {
       toast.error("当前浏览器不支持语音功能");
       return;
     }
+    utteranceRef.current = null;
     window.speechSynthesis.cancel();
+    lipRef.current?.onStop?.();
+    setIsSpeaking(false);
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "zh-CN";
     utterance.rate = playbackSpeed * 0.95; // 基础速度 0.95 * 用户选择的倍速
@@ -95,9 +114,19 @@ function useTTS() {
     );
     const zhVoice = zhFemaleVoice || voices.find((v) => v.lang.startsWith("zh"));
     if (zhVoice) utterance.voice = zhVoice;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onstart = () => {
+      if (utteranceRef.current !== utterance) return;
+      setIsSpeaking(true);
+      lipRef.current?.onBrowserSpeak?.(text, playbackSpeed);
+    };
+    const finish = () => {
+      if (utteranceRef.current !== utterance) return;
+      utteranceRef.current = null;
+      setIsSpeaking(false);
+      lipRef.current?.onStop?.();
+    };
+    utterance.onend = finish;
+    utterance.onerror = finish;
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
   }, [playbackSpeed]);
@@ -105,11 +134,13 @@ function useTTS() {
   // API 语音（ElevenLabs / Fish Audio）
   const speakApi = useCallback(
     (text: string) => {
+      const requestedAt = performance.now();
       setIsSpeaking(true);
       ttsGenerate.mutate(
         { text },
         {
           onSuccess: (data) => {
+            const receivedAt = performance.now();
             if (audioRef.current) {
               audioRef.current.pause();
               audioRef.current = null;
@@ -117,11 +148,19 @@ function useTTS() {
             const audio = new Audio(data.audioUrl);
             audio.playbackRate = playbackSpeed;
             audioRef.current = audio;
+            audio.addEventListener("playing", () => {
+              console.info("[TTS timing]", {
+                requestMs: Math.round(receivedAt - requestedAt),
+                audioLoadMs: Math.round(performance.now() - receivedAt),
+                totalMs: Math.round(performance.now() - requestedAt),
+              });
+            }, { once: true });
             audio.onended = () => setIsSpeaking(false);
             audio.onerror = () => {
               setIsSpeaking(false);
               toast.error("语音播放失败");
             };
+            lipRef.current?.onAudio?.(audio);
             audio.play().catch(() => {
               setIsSpeaking(false);
             });
@@ -148,12 +187,21 @@ function useTTS() {
   );
 
   const stop = useCallback(() => {
-    window.speechSynthesis.cancel();
+    utteranceRef.current = null;
+    window.speechSynthesis?.cancel();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
+    lipRef.current?.onStop?.();
     setIsSpeaking(false);
+  }, []);
+
+  useEffect(() => () => {
+    utteranceRef.current = null;
+    window.speechSynthesis?.cancel();
+    audioRef.current?.pause();
+    lipRef.current?.onStop?.();
   }, []);
 
   const toggleAutoPlay = useCallback(() => {
@@ -173,7 +221,16 @@ export default function Chat() {
   const params = useParams();
   const conversationId = params.id ? parseInt(params.id) : null;
   const { theme, toggleTheme } = useTheme();
-  const { speak, stop, isSpeaking, autoPlay, toggleAutoPlay, ttsProvider, playbackSpeed, updateSpeed } = useTTS();
+  const lipSync = useLipSync();
+  const { speak, stop, isSpeaking, autoPlay, toggleAutoPlay, ttsProvider, playbackSpeed, updateSpeed } = useTTS({
+    onBrowserSpeak: lipSync.speakSimulated,
+    onAudio: lipSync.watchAudio,
+    onStop: lipSync.stop,
+  });
+  const { enabled: live2dPref } = useLive2DPreference();
+  const [stageCollapsed, setStageCollapsed] = useStageCollapsed();
+  const [replySequence, setReplySequence] = useState(0);
+  const [messageEmotion, setMessageEmotion] = useState<MessageEmotion | null>(null);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
   const [message, setMessage] = useState("");
@@ -243,7 +300,14 @@ export default function Chat() {
 
   const sendMessage = trpc.chat.sendMessage.useMutation({
     onSuccess: async (data) => {
-      await refetchMessages();
+      // Start refreshing text immediately, but do not delay TTS behind it.
+      const refreshStartedAt = performance.now();
+      const messagesRefresh = refetchMessages().then((result) => {
+        console.info("[Chat timing]", {
+          messagesRefreshMs: Math.round(performance.now() - refreshStartedAt),
+        });
+        return result;
+      });
 
       // 更新心情 - 用户消息
       if (girlfriend) {
@@ -271,6 +335,11 @@ export default function Chat() {
 
       // 朗读 AI 回复：开启了自动播放，或这条消息来自语音输入（M4-3
       // 语音往返 —— 用语音说话，就用语音回你）。
+      setReplySequence(value => value + 1);
+      if (data.emotion) {
+        setMessageEmotion(data.emotion);
+      }
+
       if ((autoPlay || lastInputWasVoiceRef.current) && data.assistantMessage?.content) {
         const content = data.assistantMessage.content;
         if (!content.startsWith("[")) {
@@ -288,9 +357,11 @@ export default function Chat() {
       }
 
       setMessage("");
+      await messagesRefresh;
       scrollToBottom();
     },
     onError: (error) => {
+      void refetchMessages();
       if (error.message.startsWith("UPGRADE_REQUIRED")) {
         toast.error("当前套餐不支持此功能，去设置查看订阅选项", {
           action: { label: "去设置", onClick: () => setLocation("/settings") },
@@ -546,9 +617,47 @@ export default function Chat() {
     sad: { emoji: "😭", label: "伤心", color: "text-red-500" },
   };
   const currentMoodInfo = moodData ? MOOD_CONFIG[moodData.mood] : null;
+  const showLive2D =
+    live2dPref && isOfficialLive2DCompanion(girlfriend);
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex h-screen flex-col bg-background lg:flex-row">
+      {showLive2D && (
+        <aside
+          className={`relative shrink-0 border-b bg-card lg:border-b-0 lg:border-r ${
+            stageCollapsed ? "h-11 lg:h-auto" : "h-[36vh] lg:h-auto"
+          } lg:w-[min(400px,38vw)]`}
+        >
+          <button
+            type="button"
+            className="absolute right-2 top-2 z-10 rounded-full bg-background/80 p-1 text-muted-foreground lg:hidden"
+            onClick={() => setStageCollapsed((v) => !v)}
+            aria-label={stageCollapsed ? "展开看板娘" : "收起看板娘"}
+          >
+            {stageCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </button>
+          {stageCollapsed ? (
+            <p className="flex h-11 items-center px-3 text-xs text-muted-foreground lg:hidden">
+              {girlfriend.name} · 点右侧展开 Live2D
+            </p>
+          ) : (
+            <Live2DStage
+              name={girlfriend.name}
+              portraitUrl={girlfriend.avatarUrl || girlfriend.referenceImageUrl}
+              isRecording={isRecording}
+              isTranscribing={isTranscribing}
+              isThinking={sendMessage.isPending}
+              isSpeaking={isSpeaking}
+              mood={moodData?.mood}
+              messageEmotion={messageEmotion}
+              replySequence={replySequence}
+              onReady={lipSync.attach}
+            />
+          )}
+        </aside>
+      )}
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* 顶部导航栏 */}
       <header className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2 sm:py-3 border-b bg-card" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
         <Button variant="ghost" size="icon" onClick={() => setLocation("/")}>
@@ -927,6 +1036,7 @@ export default function Chat() {
         newLevel={levelUpLevel}
         onClose={() => setShowLevelUp(false)}
       />
+      </div>
     </div>
   );
 }

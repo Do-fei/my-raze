@@ -1,17 +1,9 @@
+import { verifyDeepseekKey } from "../deepseekAuth";
 import type { KeyName } from "./types";
 
-/**
- * Lightweight format-only validation for BYOK keys (Phase 1b-i, issue #3).
- *
- * Real "is this key valid for that provider" validation requires a live
- * test call to the provider. For the initial cut we just enforce shape
- * (prefix, length) so obviously bad values don't get persisted. Phase 1b-i+
- * can replace this with real `verify()` calls per provider once the
- * Provider abstraction (Phase 3, issue #22) lands and gives us a clean
- * place to put them.
- *
- * Throws with a user-readable message on failure.
- */
+import { verifyOpenRouterKey } from "../openrouterAuth";
+
+/** OpenRouter uses live authentication; other providers use format checks. */
 export async function validateProviderKey(
   name: KeyName,
   value: string
@@ -25,6 +17,10 @@ export async function validateProviderKey(
   }
 
   switch (name) {
+    case "deepseek":
+      if (!trimmed.startsWith("sk-") || trimmed.startsWith("sk-or-")) throw new Error("请填写 DeepSeek 官方 Key，不能使用 OpenRouter Key");
+      await verifyDeepseekKey(trimmed);
+      break;
     case "openrouter":
       // OpenRouter keys are `sk-or-v1-...` per their docs.
       if (!/^sk-or-/.test(trimmed)) {
@@ -32,6 +28,7 @@ export async function validateProviderKey(
           "OpenRouter keys start with `sk-or-` — check that you copied the right one"
         );
       }
+      await verifyOpenRouterKey(trimmed);
       break;
     case "openai":
       if (!/^sk-/.test(trimmed)) {

@@ -94,6 +94,7 @@ export default function Home() {
     onSuccess: () => {
       window.location.href = "/";
     },
+    onError: () => toast.error("退出登录失败，请重试"),
   });
 
   const { data: girlfriends, isLoading: girlfriendsLoading, refetch } = trpc.girlfriend.list.useQuery(
@@ -430,6 +431,7 @@ export default function Home() {
             variant="ghost"
             size="icon"
             onClick={() => logout.mutate()}
+            disabled={logout.isPending}
             title="退出登录"
             className="text-muted-foreground hover:text-destructive"
           >

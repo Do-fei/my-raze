@@ -1,4 +1,10 @@
+import { currentReplyStyle, normalizeReplyStyle } from "../shared/replyStyle";
+import { configuredLlmProvider, LLM_PROVIDERS, DEEPSEEK_MODELS, llmRequestOptions } from "../shared/llmProviders";
+import { deepseekFailure, verifyDeepseekKey } from "./_core/deepseekAuth";
+import { openRouterFailure, verifyOpenRouterKey } from "./_core/openrouterAuth";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { auth } from "./_core/auth";
+import { fromNodeHeaders } from "better-auth/node";
 import {
   keyProvider,
   KEY_NAMES,
@@ -48,6 +54,10 @@ import {
   setUserBirthDate,
 } from "./db";
 import { detectSelfHarm, SAFETY_SYSTEM_CLAUSE } from "../shared/safety";
+import {
+  LIVE2D_EMOTION_SYSTEM_CLAUSE,
+  resolveMessageEmotion,
+} from "../shared/live2d";
 import {
   buildMemoryPromptBlock,
   maybeExtractMemories,
@@ -149,13 +159,20 @@ export const appRouter = router({
         return { ok: true as const };
       }),
 
-    logout: publicProcedure.mutation(({ ctx }) => {
-      // Defense-in-depth — Better-Auth's own /api/auth/sign-out is the
-      // primary signout path; this clears the same cookies for clients
-      // that hit tRPC directly. See ADR 0006.
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      if (!auth) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Authentication unavailable" });
+      }
+      // Let Better Auth revoke the current session and expire its own cookies,
+      // including HTTPS prefixes and any chunked session-data cookies.
+      const { headers } = await auth.api.signOut({
+        headers: fromNodeHeaders(ctx.req.headers),
+        returnHeaders: true,
+      });
+      for (const cookie of headers.getSetCookie()) {
+        ctx.res.append("Set-Cookie", cookie);
+      }
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie("better-auth.session_token", { ...cookieOptions, maxAge: -1 });
-      ctx.res.clearCookie("better-auth.session_data", { ...cookieOptions, maxAge: -1 });
       // Also clear the legacy v3 cookie if any client still has it.
       ctx.res.clearCookie("app_session_id", { ...cookieOptions, maxAge: -1 });
       return {
@@ -528,15 +545,18 @@ export const appRouter = router({
 
         // 0b. 提前解析 LLM 密钥（M1-3）：BYOK → 运营方 key。缺 key 要在
         // 任何写入/扣配额之前失败，避免半截对话和白烧额度。
-        const openRouterKey = await keyProvider.get(
+        const apiConfig = await getUserApiConfig(ctx.user.id);
+        const llmProvider = configuredLlmProvider(apiConfig?.llmApiUrl);
+        const llm = LLM_PROVIDERS[llmProvider];
+        const chatKey = await keyProvider.get(
           { userId: ctx.user.id },
-          "openrouter"
+          llmProvider
         );
-        if (!openRouterKey) {
+        if (!chatKey) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message:
-              "Chat is not configured yet: no OpenRouter key available. Set OPERATOR_OPENROUTER_KEY on the server, or add your own key in Settings.",
+              `${llm.label} 尚未配置，请在设置中添加对应的 API Key。`,
           });
         }
 
@@ -563,7 +583,10 @@ export const appRouter = router({
         // 用量计量（ADR 0002）；限流仍然生效。BILLING_PROVIDER=none 的
         // 自托管部署完全不计量。
         const userKeyInfo = await keyProvider.describeUserKeys(ctx.user.id);
-        const isByokChat = userKeyInfo.openrouter?.isSet === true;
+        const isByokChat = userKeyInfo[llmProvider]?.isSet === true;
+        if (llmProvider === "deepseek" && isBillingEnforced() && !isByokChat) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "DeepSeek 官方直连需要在设置中添加个人 Key。" });
+        }
         const { tier, limits } = await getTierLimits(ctx.user.id);
         if (isBillingEnforced() && !isByokChat && limits.dailyMessages !== null) {
           await consumeDailyMeter(
@@ -588,7 +611,6 @@ export const appRouter = router({
         const recentMessages = await getRecentMessages(input.conversationId, 10);
 
         // 4. 获取用户全局提示词配置
-        const apiConfig = await getUserApiConfig(ctx.user.id);
 
         // 5. 构建分层系统提示词
         let systemPrompt = `你是${girlfriend.name}，一个虚拟女友。
@@ -637,6 +659,8 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         // 安全条款（M1-6 / SB 243）：常驻，且排在所有用户可控提示词之后，
         // 避免被全局/个体提示词覆盖。
         systemPrompt += `\n${SAFETY_SYSTEM_CLAUSE}`;
+        systemPrompt += `\n${LIVE2D_EMOTION_SYSTEM_CLAUSE}`;
+        systemPrompt += currentReplyStyle(input.content);
 
         // 自残/危机表达检测：命中时响应会带 safetyNotice，前端展示
         // 危机干预资源（协议全文见 docs/SAFETY.md）。
@@ -651,25 +675,25 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           })),
         ];
 
-        // 7. 调用 LLM 获取回复（M1-3：唯一路径是 OpenRouter，key 已在
-        // 步骤 0b 解析并校验）。Manus 内置 LLM 回退已删除。
+        // 7. 使用选中服务商的官方地址与对应 Key 获取回复。
         let aiResponse: string;
         try {
           const response = await axios.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            `${llm.baseUrl}/chat/completions`,
             {
               // 免费档锁定 gpt-4o-mini（成本上限依据，ADR 0005）；
               // 付费档 / BYOK / 自托管可自由选模型。
               model:
                 isBillingEnforced() && limits.modelLocked && !isByokChat
                   ? FREE_TIER_DEFAULT_MODEL
-                  : apiConfig?.llmModel || FREE_TIER_DEFAULT_MODEL,
+                  : apiConfig?.llmModel || llm.defaultModel,
+              ...llmRequestOptions(llmProvider),
               messages,
             },
             {
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${openRouterKey}`,
+                Authorization: `Bearer ${chatKey}`,
               },
               // 上游挂起不该占死 Express worker（issue #22 的最小版）。
               timeout: 60_000,
@@ -681,15 +705,17 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
               ? messageContent
               : JSON.stringify(messageContent);
         } catch (error) {
-          console.error("[Chat] LLM API error:", error);
-          aiResponse = "抱歉，我现在有点累了，稍后再聊吧~";
+          const failure = llmProvider === "deepseek" ? deepseekFailure(error) : openRouterFailure(error);
+          console.error("[Chat] LLM API error:", { status: failure.status ?? "unavailable" });
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: failure.message });
         }
 
-        // 8. 保存 AI 回复
+        // 8. 保存 AI 回复（剥掉 Live2D 表情标签，避免出现在气泡里）
+        const spoken = resolveMessageEmotion(aiResponse);
         const assistantMessage = await createMessage({
           conversationId: input.conversationId,
           role: "assistant",
-          content: aiResponse,
+          content: normalizeReplyStyle(input.content, spoken.text),
         });
 
         // 9. 异步记忆提取（M2-1）：每 10 条消息触发一次，不阻塞响应。
@@ -698,13 +724,15 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           girlfriendId: girlfriend.id,
           conversationId: input.conversationId,
           intimacyLevel: girlfriend.intimacyLevel || 1,
-          apiKey: openRouterKey,
+          apiKey: chatKey,
+          provider: llmProvider,
         });
 
         return {
           userMessage,
           assistantMessage,
           safetyNotice,
+          emotion: spoken.emotion,
         };
       }),
 
@@ -1121,7 +1149,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
       const subscription = await getSubscription(ctx.user.id);
       const keys = await keyProvider.describeUserKeys(ctx.user.id);
       const byok = {
-        chat: keys.openrouter?.isSet === true,
+        chat: keys[configuredLlmProvider((await getUserApiConfig(ctx.user.id))?.llmApiUrl)]?.isSet === true,
         selfie: keys.fal?.isSet === true,
       };
 
@@ -1212,6 +1240,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
     updatePreferences: protectedProcedure
       .input(
         z.object({
+          llmProvider: z.enum(["openrouter", "deepseek"]).optional(),
           llmModel: z.string().optional(),
           ttsProvider: z
             .enum(["browser", "elevenlabs", "fishaudio"])
@@ -1227,9 +1256,21 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         })
       )
       .mutation(async ({ ctx, input }) => {
+        const { llmProvider, ...preferences } = input;
+        const current = await getUserApiConfig(ctx.user.id);
+        const provider = llmProvider ?? configuredLlmProvider(current?.llmApiUrl);
+        const switching = provider !== configuredLlmProvider(current?.llmApiUrl);
+        const model = input.llmModel ?? (switching ? LLM_PROVIDERS[provider].defaultModel : current?.llmModel);
+        if (provider === "deepseek" && model && !DEEPSEEK_MODELS.includes(model as any)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "请选择 DeepSeek 官方模型。" });
+        }
+        if (provider === "openrouter" && model?.startsWith("deepseek-v4-")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "请选择 OpenRouter 模型。" });
+        }
         return await upsertApiConfig({
           userId: ctx.user.id,
-          ...input,
+          ...preferences,
+          ...(llmProvider ? { llmApiUrl: LLM_PROVIDERS[provider].baseUrl, llmModel: model ?? LLM_PROVIDERS[provider].defaultModel } : {}),
         });
       }),
 
@@ -1259,6 +1300,25 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         await keyProvider.setUserKey(ctx.user.id, input.name, input.value);
         return { ok: true as const };
       }),
+
+    verifyDeepseekKey: protectedProcedure.mutation(async ({ ctx }) => {
+      const key = await keyProvider.get({ userId: ctx.user.id }, "deepseek");
+      if (!key) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "尚未配置 DeepSeek Key" });
+      try { await verifyDeepseekKey(key); }
+      catch (error) { throw new TRPCError({ code: "PRECONDITION_FAILED", message: (error as Error).message }); }
+      return { ok: true as const };
+    }),
+
+    verifyOpenRouterKey: protectedProcedure.mutation(async ({ ctx }) => {
+      const key = await keyProvider.get({ userId: ctx.user.id }, "openrouter");
+      if (!key) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "尚未配置 OpenRouter Key" });
+      try {
+        await verifyOpenRouterKey(key);
+      } catch (error) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: (error as Error).message });
+      }
+      return { ok: true as const };
+    }),
 
     // Remove a user's BYOK key. After this, calls fall back to operator
     // default (or fail if no operator key is configured).
@@ -1676,6 +1736,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
             throw new Error("ElevenLabs 语音生成失败");
           }
         } else if (provider === "fishaudio") {
+          const startedAt = performance.now();
           const fishKey = await keyProvider.get(
             { userId: ctx.user.id },
             "fish-audio"
@@ -1689,6 +1750,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           }
 
           try {
+            const synthesisStartedAt = performance.now();
             const response = await axios.post(
               "https://api.fish.audio/v1/tts",
               {
@@ -1700,22 +1762,31 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
                 headers: {
                   Authorization: `Bearer ${fishKey}`,
                   "Content-Type": "application/json",
-                  model: "s1",
+                  // Explicit free model; never retry with a paid model.
+                  model: "s2.1-pro-free",
                 },
                 responseType: "arraybuffer",
                 timeout: 60_000,
               }
             );
 
-            // 上传音频到 S3
+            const synthesisFinishedAt = performance.now();
+            // Persist through the configured local or S3 storage driver.
             const audioBuffer = Buffer.from(response.data);
             const fileKey = `tts-${ctx.user.id}-${nanoid()}.mp3`;
             const { url } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
+            console.info("[TTS timing]", {
+              provider: "fishaudio",
+              prepareMs: Math.round(synthesisStartedAt - startedAt),
+              synthesisMs: Math.round(synthesisFinishedAt - synthesisStartedAt),
+              storageMs: Math.round(performance.now() - synthesisFinishedAt),
+              totalMs: Math.round(performance.now() - startedAt),
+            });
 
             return { audioUrl: url, provider: "fishaudio" as const };
           } catch (error: any) {
             console.error("[TTS] Fish Audio error:", error?.response?.status);
-            throw new Error("Fish Audio 语音生成失败");
+            throw new Error("Fish Audio 免费语音生成失败，请稍后重试；不会自动切换到付费模型");
           }
         } else {
           // browser 模式，前端处理
