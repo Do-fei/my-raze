@@ -277,6 +277,7 @@ export const LIVE2D_PARTS_DEFAULT: Record<string, number> = {
 
 /** Face keys we ease back — not eyes or look-at X/Y (blink + 视线跟随). */
 export const LIVE2D_FACE_RESET: Record<string, number> = {
+  ParamMouthOpenY: 0,
   ParamMouthForm: 0,
   ParamCheek: 0,
   ParamBrowLY: 0,

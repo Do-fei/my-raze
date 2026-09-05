@@ -8,3 +8,10 @@ export function currentReplyStyle(message: string): string {
   }
   return "";
 }
+
+/** Join plain Chinese prose without cutting off the answer or changing quoted/code content. */
+export function normalizeReplyStyle(request: string, reply: string): string {
+  if (!/(?:一句话|一句中文|只[用说回答]{0,3}一句)/.test(request)) return reply;
+  if (!/[\u4e00-\u9fff]/.test(reply) || /[`"“”「」『』]|https?:\/\/|^\s*(?:[-*#>]|\d+[.)])\s/m.test(reply)) return reply;
+  return reply.trim().replace(/[。！？!?]+\s*(?=[\u4e00-\u9fffA-Za-z0-9])/g, "，");
+}

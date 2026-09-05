@@ -34,6 +34,10 @@ it("applies expression and mouth after engine animation, retriggers same-emotion
   expect(state.params.get("ParamMouthOpenY")).toBe(0.8);
   expect(state.params.get("ParamMouthForm")).toBe(0.7);
   await act(async () => root.render(<Live2DCanvas emotion="happy" phase="idle" replySequence={1} onReady={ready} />));
+  handle!.setMouth(0);
+  state.params.set("ParamMouthOpenY", 0.8);
+  state.listeners.get("beforeModelUpdate")!();
+  expect(state.params.get("ParamMouthOpenY")).toBe(0);
   const firstStops = state.stops.mock.calls.length;
   await act(async () => root.render(<Live2DCanvas emotion="happy" phase="idle" replySequence={2} onReady={ready} />));
   expect(state.stops.mock.calls.length).toBeGreaterThan(firstStops);

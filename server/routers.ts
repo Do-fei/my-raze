@@ -1,4 +1,4 @@
-import { currentReplyStyle } from "../shared/replyStyle";
+import { currentReplyStyle, normalizeReplyStyle } from "../shared/replyStyle";
 import { configuredLlmProvider, LLM_PROVIDERS, DEEPSEEK_MODELS, llmRequestOptions } from "../shared/llmProviders";
 import { deepseekFailure, verifyDeepseekKey } from "./_core/deepseekAuth";
 import { openRouterFailure, verifyOpenRouterKey } from "./_core/openrouterAuth";
@@ -706,7 +706,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         const assistantMessage = await createMessage({
           conversationId: input.conversationId,
           role: "assistant",
-          content: spoken.text,
+          content: normalizeReplyStyle(input.content, spoken.text),
         });
 
         // 9. 异步记忆提取（M2-1）：每 10 条消息触发一次，不阻塞响应。
