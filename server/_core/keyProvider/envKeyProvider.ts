@@ -34,6 +34,7 @@ import {
 
 const OPERATOR_ENV: Record<KeyName, string> = {
   openrouter: "OPERATOR_OPENROUTER_KEY",
+  deepseek: "OPERATOR_DEEPSEEK_KEY",
   fal: "OPERATOR_FAL_KEY",
   elevenlabs: "OPERATOR_ELEVENLABS_KEY",
   "fish-audio": "OPERATOR_FISH_AUDIO_KEY",

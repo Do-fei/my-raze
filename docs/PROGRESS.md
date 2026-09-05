@@ -157,3 +157,13 @@
 - Key 保存失败保留输入，不提示配置全部保存成功；空输入保留现有 Key。
 - 聊天上游失败返回明确错误，不写入固定道歉回复；日志只输出状态码，失败后刷新消息。
 - 本地认证回归与已有 Live2D 回归共 39 项通过，TypeScript 检查通过。部署验收结果另记本地报告。
+
+
+### 2026-09-05 DeepSeek 官方直连
+
+- 设置增加服务商选择和独立 DeepSeek Key；旧配置默认 OpenRouter。
+- 复用 llmApiUrl 记录固定官方地址，不接受任意 URL，无数据库迁移。
+- DeepSeek Key 加密保存，保存前 GET /user/balance 认证，提供只读重验按钮。
+- 默认 deepseek-v4-flash，非思考模式，单次最多 1024 输出 token；可选官方 Pro。
+- 聊天与记忆提取均按所选服务商路由，不串用 Key。商业计费模式 DeepSeek 要求 BYOK；自托管支持 OPERATOR_DEEPSEEK_KEY。
+- 68 项针对性测试、类型检查、构建通过；真实 DeepSeek 认证和生成需用户保存 Key 后验收。

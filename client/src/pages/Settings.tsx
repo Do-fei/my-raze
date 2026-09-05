@@ -1,3 +1,4 @@
+import { configuredLlmProvider, LLM_PROVIDERS, DEEPSEEK_MODELS, type LlmProvider } from "@shared/llmProviders";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,14 @@ export default function Settings() {
   // API Key states
   const [falApiKey, setFalApiKey] = useState("");
   const [openRouterKey, setOpenRouterKey] = useState("");
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>("openrouter");
+  const [deepseekKey, setDeepseekKey] = useState("");
+  const [deepseekVerification, setDeepseekVerification] = useState("未验证");
+  const [savingLlm, setSavingLlm] = useState(false);
+  const verifyDeepseek = trpc.apiConfig.verifyDeepseekKey.useMutation({
+    onSuccess: () => setDeepseekVerification("认证通过（余额及模型可用性以实际调用为准）"),
+    onError: (error) => setDeepseekVerification(error.message),
+  });
   const [selectedModel, setSelectedModel] = useState("");
   const [modelSearch, setModelSearch] = useState("");
   const [showModelList, setShowModelList] = useState(false);
@@ -123,7 +132,7 @@ export default function Settings() {
   const openRouterReady = !!apiConfig?.keys.openrouter.isSet;
   const { data: modelsData, isLoading: modelsLoading, error: modelsError } = trpc.apiConfig.listModels.useQuery(
     undefined,
-    { enabled: openRouterReady, retry: false }
+    { enabled: llmProvider === "openrouter" && openRouterReady, retry: false }
   );
 
   // ElevenLabs 声音列表
@@ -165,7 +174,8 @@ export default function Settings() {
    * Returns whether all pending keys were saved successfully.
    */
   async function saveDirtyKeys() {
-    const pending: Array<{ name: "openrouter" | "fal" | "elevenlabs" | "fish-audio" | "openai"; value: string }> = [];
+    const pending: Array<{ name: "deepseek" | "openrouter" | "fal" | "elevenlabs" | "fish-audio" | "openai"; value: string }> = [];
+    if (deepseekKey) pending.push({ name: "deepseek", value: deepseekKey });
     if (openRouterKey) pending.push({ name: "openrouter", value: openRouterKey });
     if (falApiKey) pending.push({ name: "fal", value: falApiKey });
     if (elevenlabsApiKey) pending.push({ name: "elevenlabs", value: elevenlabsApiKey });
@@ -178,6 +188,7 @@ export default function Settings() {
       try {
         await setKeyMutation.mutateAsync({ name, value });
         saved++;
+        if (name === "deepseek") { setDeepseekKey(""); setDeepseekVerification("认证通过（余额及模型可用性以实际调用为准）"); }
         if (name === "openrouter") { setOpenRouterKey(""); setOpenRouterVerification("认证通过（不代表有可用余额或模型权限）"); }
         if (name === "fal") setFalApiKey("");
         if (name === "elevenlabs") setElevenlabsApiKey("");
@@ -209,7 +220,8 @@ export default function Settings() {
       // `apiConfig.keys[name].lastFour`. Typing into the field again
       // replaces the stored value via `setKey` on save.
       const p = apiConfig.preferences;
-      setSelectedModel(p.llmModel || "");
+      setLlmProvider(configuredLlmProvider(p.llmApiUrl));
+      setSelectedModel(p.llmModel || LLM_PROVIDERS[configuredLlmProvider(p.llmApiUrl)].defaultModel);
       setTtsProvider((p.ttsProvider as TTSProvider) || "browser");
       setElevenlabsVoiceId(p.elevenlabsVoiceId || "");
       setElevenlabsVoiceName(p.elevenlabsVoiceName || "");
@@ -283,8 +295,10 @@ export default function Settings() {
     // Phase 1b-i: preferences and keys are saved through separate
     // endpoints so the wire never carries plaintext key + non-key payload
     // in the same call.
+    if (!(await saveDirtyKeys())) return;
     await updatePreferences.mutateAsync({
-      llmModel: selectedModel || undefined,
+      llmProvider,
+      llmModel: selectedModel || LLM_PROVIDERS[llmProvider].defaultModel,
       ttsProvider,
       elevenlabsVoiceId: elevenlabsVoiceId || undefined,
       elevenlabsVoiceName: elevenlabsVoiceName || undefined,
@@ -294,7 +308,6 @@ export default function Settings() {
       replyLanguage: replyLanguage || null,
       replyLengthLimit: replyLengthLimit || null,
     });
-    if (!(await saveDirtyKeys())) return;
     toast.success("配置保存成功");
   };
 
@@ -349,12 +362,21 @@ export default function Settings() {
   };
 
   const handleSaveLlmConfig = async () => {
-    await updatePreferences.mutateAsync({
-      llmModel: selectedModel || undefined,
-    });
-    if (!(await saveDirtyKeys())) return;
-    setHasUnsavedLlmChanges(false);
-    toast.success("LLM 配置已保存生效");
+    setSavingLlm(true);
+    try {
+      const value = llmProvider === "deepseek" ? deepseekKey : openRouterKey;
+      if (value) {
+        await setKeyMutation.mutateAsync({ name: llmProvider, value });
+        if (llmProvider === "deepseek") { setDeepseekKey(""); setDeepseekVerification("认证通过（余额及模型可用性以实际调用为准）"); }
+        else { setOpenRouterKey(""); setOpenRouterVerification("认证通过（不代表有可用余额或模型权限）"); }
+      }
+      await updatePreferences.mutateAsync({ llmProvider, llmModel: selectedModel || LLM_PROVIDERS[llmProvider].defaultModel });
+      await utils2.apiConfig.get.invalidate();
+      setHasUnsavedLlmChanges(false);
+      toast.success("LLM 配置已保存生效");
+    } catch (error: any) {
+      toast.error(`LLM 配置保存失败：${error.message}`);
+    } finally { setSavingLlm(false); }
   };
 
   const handleSelectElevenLabsVoice = (voice: ElevenLabsVoice) => {
@@ -1216,6 +1238,48 @@ export default function Settings() {
               </CardContent>
             </Card>
 
+            <Card>
+              <CardHeader><CardTitle>聊天服务商</CardTitle><CardDescription>选择聊天和记忆提取使用的服务。两家的 Key 分别保存。</CardDescription></CardHeader>
+              <CardContent>
+                <Label htmlFor="llmProvider">服务商</Label>
+                <select id="llmProvider" className="w-full rounded-md border bg-background p-3 mt-2" value={llmProvider}
+                  disabled={savingLlm} onChange={(e) => {
+                    const provider = e.target.value as LlmProvider;
+                    setLlmProvider(provider);
+                    setSelectedModel(LLM_PROVIDERS[provider].defaultModel);
+                    setHasUnsavedLlmChanges(true);
+                    setShowModelList(false);
+                  }}>
+                  <option value="openrouter">OpenRouter（多模型）</option>
+                  <option value="deepseek">DeepSeek（官方直连）</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-2">切换后请点击下方“保存生效”。</p>
+              </CardContent>
+            </Card>
+            {llmProvider === "deepseek" && <Card>
+              <CardHeader><CardTitle>DeepSeek 官方配置</CardTitle>
+                <CardDescription>使用 DeepSeek 官方账户，费用由你的 DeepSeek 账户承担。
+                  <a className="text-primary ml-1" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">获取 API Key</a>
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Label htmlFor="deepseekKey">DeepSeek API Key</Label>
+                <Input id="deepseekKey" type="password" autoComplete="off" value={deepseekKey}
+                  placeholder={apiConfig?.keys.deepseek?.isSet ? "已保存；留空保留现有 Key" : "输入 DeepSeek 官方 sk-... Key"}
+                  onChange={(e) => { setDeepseekKey(e.target.value); setHasUnsavedLlmChanges(true); }} />
+                <p className="text-xs text-muted-foreground" role="status">{deepseekKey ? "待保存并验证" : deepseekVerification}</p>
+                <Button variant="outline" disabled={!apiConfig?.keys.deepseek?.isSet || !!deepseekKey || verifyDeepseek.isPending || savingLlm}
+                  onClick={() => verifyDeepseek.mutate()}>{verifyDeepseek.isPending ? "正在验证…" : "验证已保存的 DeepSeek Key（不生成内容）"}</Button>
+                <Label htmlFor="deepseekModel">DeepSeek 模型</Label>
+                <select id="deepseekModel" className="w-full rounded-md border bg-background p-3" value={selectedModel}
+                  onChange={(e) => { setSelectedModel(e.target.value); setHasUnsavedLlmChanges(true); }}>
+                  {DEEPSEEK_MODELS.map(model => <option key={model} value={model}>{model}{model.endsWith("flash") ? "（经济，推荐）" : "（更强）"}</option>)}
+                </select>
+                <p className="text-xs text-muted-foreground">日常聊天使用非思考模式。保存时只验证认证，不生成内容。<a className="text-primary" href="https://api-docs.deepseek.com/quick_start/pricing/" target="_blank" rel="noopener noreferrer">官方价格</a></p>
+                <Button className="w-full" onClick={handleSaveLlmConfig} disabled={savingLlm}>{savingLlm ? "正在验证并保存…" : hasUnsavedLlmChanges ? "保存生效" : "配置已生效"}</Button>
+              </CardContent>
+            </Card>}
+            {llmProvider === "openrouter" && <>
             {/* ========== OpenRouter LLM 配置 ========== */}
             <Card>
               <CardHeader>
@@ -1425,7 +1489,7 @@ export default function Settings() {
                     <Button
                       className="w-full"
                       onClick={handleSaveLlmConfig}
-                      disabled={updatePreferences.isPending}
+                      disabled={savingLlm}
                       variant={hasUnsavedLlmChanges ? "default" : "outline"}
                     >
                       {updatePreferences.isPending ? (
@@ -1454,6 +1518,8 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+
+            </>}
 
             {/* ========== AI 行为设定 ========== */}
             <Card>

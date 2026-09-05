@@ -1,3 +1,5 @@
+import { configuredLlmProvider, LLM_PROVIDERS, DEEPSEEK_MODELS, llmRequestOptions } from "../shared/llmProviders";
+import { deepseekFailure, verifyDeepseekKey } from "./_core/deepseekAuth";
 import { openRouterFailure, verifyOpenRouterKey } from "./_core/openrouterAuth";
 import { getSessionCookieOptions } from "./_core/cookies";
 import {
@@ -533,15 +535,18 @@ export const appRouter = router({
 
         // 0b. 提前解析 LLM 密钥（M1-3）：BYOK → 运营方 key。缺 key 要在
         // 任何写入/扣配额之前失败，避免半截对话和白烧额度。
-        const openRouterKey = await keyProvider.get(
+        const apiConfig = await getUserApiConfig(ctx.user.id);
+        const llmProvider = configuredLlmProvider(apiConfig?.llmApiUrl);
+        const llm = LLM_PROVIDERS[llmProvider];
+        const chatKey = await keyProvider.get(
           { userId: ctx.user.id },
-          "openrouter"
+          llmProvider
         );
-        if (!openRouterKey) {
+        if (!chatKey) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message:
-              "Chat is not configured yet: no OpenRouter key available. Set OPERATOR_OPENROUTER_KEY on the server, or add your own key in Settings.",
+              `${llm.label} 尚未配置，请在设置中添加对应的 API Key。`,
           });
         }
 
@@ -568,7 +573,10 @@ export const appRouter = router({
         // 用量计量（ADR 0002）；限流仍然生效。BILLING_PROVIDER=none 的
         // 自托管部署完全不计量。
         const userKeyInfo = await keyProvider.describeUserKeys(ctx.user.id);
-        const isByokChat = userKeyInfo.openrouter?.isSet === true;
+        const isByokChat = userKeyInfo[llmProvider]?.isSet === true;
+        if (llmProvider === "deepseek" && isBillingEnforced() && !isByokChat) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "DeepSeek 官方直连需要在设置中添加个人 Key。" });
+        }
         const { tier, limits } = await getTierLimits(ctx.user.id);
         if (isBillingEnforced() && !isByokChat && limits.dailyMessages !== null) {
           await consumeDailyMeter(
@@ -593,7 +601,6 @@ export const appRouter = router({
         const recentMessages = await getRecentMessages(input.conversationId, 10);
 
         // 4. 获取用户全局提示词配置
-        const apiConfig = await getUserApiConfig(ctx.user.id);
 
         // 5. 构建分层系统提示词
         let systemPrompt = `你是${girlfriend.name}，一个虚拟女友。
@@ -657,25 +664,25 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           })),
         ];
 
-        // 7. 调用 LLM 获取回复（M1-3：唯一路径是 OpenRouter，key 已在
-        // 步骤 0b 解析并校验）。Manus 内置 LLM 回退已删除。
+        // 7. 使用选中服务商的官方地址与对应 Key 获取回复。
         let aiResponse: string;
         try {
           const response = await axios.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            `${llm.baseUrl}/chat/completions`,
             {
               // 免费档锁定 gpt-4o-mini（成本上限依据，ADR 0005）；
               // 付费档 / BYOK / 自托管可自由选模型。
               model:
                 isBillingEnforced() && limits.modelLocked && !isByokChat
                   ? FREE_TIER_DEFAULT_MODEL
-                  : apiConfig?.llmModel || FREE_TIER_DEFAULT_MODEL,
+                  : apiConfig?.llmModel || llm.defaultModel,
+              ...llmRequestOptions(llmProvider),
               messages,
             },
             {
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${openRouterKey}`,
+                Authorization: `Bearer ${chatKey}`,
               },
               // 上游挂起不该占死 Express worker（issue #22 的最小版）。
               timeout: 60_000,
@@ -687,7 +694,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
               ? messageContent
               : JSON.stringify(messageContent);
         } catch (error) {
-          const failure = openRouterFailure(error);
+          const failure = llmProvider === "deepseek" ? deepseekFailure(error) : openRouterFailure(error);
           console.error("[Chat] LLM API error:", { status: failure.status ?? "unavailable" });
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: failure.message });
         }
@@ -706,7 +713,8 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
           girlfriendId: girlfriend.id,
           conversationId: input.conversationId,
           intimacyLevel: girlfriend.intimacyLevel || 1,
-          apiKey: openRouterKey,
+          apiKey: chatKey,
+          provider: llmProvider,
         });
 
         return {
@@ -1130,7 +1138,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
       const subscription = await getSubscription(ctx.user.id);
       const keys = await keyProvider.describeUserKeys(ctx.user.id);
       const byok = {
-        chat: keys.openrouter?.isSet === true,
+        chat: keys[configuredLlmProvider((await getUserApiConfig(ctx.user.id))?.llmApiUrl)]?.isSet === true,
         selfie: keys.fal?.isSet === true,
       };
 
@@ -1221,6 +1229,7 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
     updatePreferences: protectedProcedure
       .input(
         z.object({
+          llmProvider: z.enum(["openrouter", "deepseek"]).optional(),
           llmModel: z.string().optional(),
           ttsProvider: z
             .enum(["browser", "elevenlabs", "fishaudio"])
@@ -1236,9 +1245,21 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         })
       )
       .mutation(async ({ ctx, input }) => {
+        const { llmProvider, ...preferences } = input;
+        const current = await getUserApiConfig(ctx.user.id);
+        const provider = llmProvider ?? configuredLlmProvider(current?.llmApiUrl);
+        const switching = provider !== configuredLlmProvider(current?.llmApiUrl);
+        const model = input.llmModel ?? (switching ? LLM_PROVIDERS[provider].defaultModel : current?.llmModel);
+        if (provider === "deepseek" && model && !DEEPSEEK_MODELS.includes(model as any)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "请选择 DeepSeek 官方模型。" });
+        }
+        if (provider === "openrouter" && model?.startsWith("deepseek-v4-")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "请选择 OpenRouter 模型。" });
+        }
         return await upsertApiConfig({
           userId: ctx.user.id,
-          ...input,
+          ...preferences,
+          ...(llmProvider ? { llmApiUrl: LLM_PROVIDERS[provider].baseUrl, llmModel: model ?? LLM_PROVIDERS[provider].defaultModel } : {}),
         });
       }),
 
@@ -1268,6 +1289,14 @@ ${girlfriend.interests ? `兴趣爱好：\n${girlfriend.interests}` : ""}
         await keyProvider.setUserKey(ctx.user.id, input.name, input.value);
         return { ok: true as const };
       }),
+
+    verifyDeepseekKey: protectedProcedure.mutation(async ({ ctx }) => {
+      const key = await keyProvider.get({ userId: ctx.user.id }, "deepseek");
+      if (!key) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "尚未配置 DeepSeek Key" });
+      try { await verifyDeepseekKey(key); }
+      catch (error) { throw new TRPCError({ code: "PRECONDITION_FAILED", message: (error as Error).message }); }
+      return { ok: true as const };
+    }),
 
     verifyOpenRouterKey: protectedProcedure.mutation(async ({ ctx }) => {
       const key = await keyProvider.get({ userId: ctx.user.id }, "openrouter");

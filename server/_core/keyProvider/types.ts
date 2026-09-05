@@ -17,6 +17,7 @@
  * `userKeys.name` column and crossed against env vars.
  */
 export const KEY_NAMES = [
+  "deepseek", // Official DeepSeek chat API
   "openrouter", // LLM (default chat provider)
   "fal", // image generation
   "elevenlabs", // TTS provider 1

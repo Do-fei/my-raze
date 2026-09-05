@@ -1,3 +1,6 @@
+import { LLM_PROVIDERS, llmRequestOptions, type LlmProvider } from "../shared/llmProviders";
+import { deepseekFailure } from "./_core/deepseekAuth";
+import { openRouterFailure } from "./_core/openrouterAuth";
 /**
  * Long-term memory service (M2): extraction, selection, recall, capacity.
  *
@@ -73,14 +76,16 @@ export function parseExtractionResponse(raw: string): ExtractedMemory[] {
   }
 }
 
-async function callExtractionModel(
+export async function callExtractionModel(
   apiKey: string,
-  transcript: string
+  transcript: string,
+  provider: LlmProvider = "openrouter"
 ): Promise<ExtractedMemory[]> {
   const response = await axios.post(
-    "https://openrouter.ai/api/v1/chat/completions",
+    `${LLM_PROVIDERS[provider].baseUrl}/chat/completions`,
     {
-      model: EXTRACTION_MODEL,
+      model: provider === "deepseek" ? LLM_PROVIDERS.deepseek.defaultModel : EXTRACTION_MODEL,
+      ...llmRequestOptions(provider),
       messages: [
         { role: "system", content: EXTRACTION_PROMPT },
         { role: "user", content: transcript },
@@ -218,6 +223,7 @@ export function maybeExtractMemories(params: {
   conversationId: number;
   intimacyLevel: number;
   apiKey: string;
+  provider?: LlmProvider;
 }): void {
   void (async () => {
     try {
@@ -245,13 +251,13 @@ export function maybeExtractMemories(params: {
         .map(m => `${m.role === "user" ? "用户" : "AI"}：${m.content}`)
         .join("\n");
 
-      const candidates = await callExtractionModel(params.apiKey, transcript);
+      const candidates = await callExtractionModel(params.apiKey, transcript, params.provider);
       if (candidates.length === 0) return;
 
       await storeExtractedMemories(params.userId, params.girlfriendId, candidates);
       await enforceMemoryCapacity(params.userId, params.girlfriendId, params.intimacyLevel);
     } catch (error) {
-      log.error("[memory] extraction failed (non-blocking)", error);
+      log.error("[memory] extraction failed (non-blocking)", params.provider === "deepseek" ? deepseekFailure(error) : openRouterFailure(error));
     }
   })();
 }

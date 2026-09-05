@@ -1,3 +1,4 @@
+import { verifyDeepseekKey } from "../deepseekAuth";
 import type { KeyName } from "./types";
 
 import { verifyOpenRouterKey } from "../openrouterAuth";
@@ -16,6 +17,10 @@ export async function validateProviderKey(
   }
 
   switch (name) {
+    case "deepseek":
+      if (!trimmed.startsWith("sk-") || trimmed.startsWith("sk-or-")) throw new Error("请填写 DeepSeek 官方 Key，不能使用 OpenRouter Key");
+      await verifyDeepseekKey(trimmed);
+      break;
     case "openrouter":
       // OpenRouter keys are `sk-or-v1-...` per their docs.
       if (!/^sk-or-/.test(trimmed)) {
