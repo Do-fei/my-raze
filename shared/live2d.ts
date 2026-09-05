@@ -500,17 +500,25 @@ export function estimateSpeechDurationMs(text: string, speed: number): number {
  * Never pass PIXI's live `width`/`height` here — those already include scale
  * and will blow up on every resize (the "only a torso" bug).
  */
+export function normalizeLive2DScale(value: number): number {
+  return Number.isFinite(value) ? Math.max(0.8, Math.min(2.5, value)) : 1;
+}
+
 export function computeLive2DLayout(
   viewW: number,
   viewH: number,
   modelW: number,
-  modelH: number
+  modelH: number,
+  userScale = 1
 ): { scale: number; x: number; y: number; anchorX: number; anchorY: number } {
   const canvasW = modelW > 8 ? modelW : 2048;
   const canvasH = modelH > 8 ? modelH : 2048;
   const padding = 0.9;
   const raw = Math.min(viewW / canvasW, viewH / canvasH) * padding;
-  const scale = Math.min(Math.max(raw, 0.04), 1.2);
+  const baseScale = Math.min(Math.max(raw, 0.04), 1.2);
+  // Keep the full model canvas below the top controls; width may crop at large zoom.
+  const maxHeightScale = Math.max(0.001, (viewH - Math.min(70, viewH * 0.15)) / canvasH);
+  const scale = Math.min(baseScale * normalizeLive2DScale(userScale), maxHeightScale);
   return {
     scale,
     x: viewW / 2,

@@ -209,6 +209,22 @@ describe("computeLive2DLayout", () => {
   });
 });
 
+describe("user-controlled Live2D size", () => {
+  it("enlarges a narrow ultrawide side stage while keeping feet anchored", () => {
+    const normal = computeLive2DLayout(400, 1000, 2048, 2048, 1);
+    const large = computeLive2DLayout(400, 1000, 2048, 2048, 2);
+    expect(large.scale).toBeCloseTo(normal.scale * 2);
+    expect(large.x).toBe(normal.x);
+    expect(large.y).toBe(normal.y);
+  });
+  it("caps height after resize without cumulative growth", () => {
+    const small = computeLive2DLayout(390, 300, 2048, 2048, 2.5);
+    expect(small.y - small.scale * 2048).toBeGreaterThanOrEqual(0);
+    expect(computeLive2DLayout(390, 300, 2048, 2048, 2.5)).toEqual(small);
+    expect(Number.isFinite(computeLive2DLayout(390, 300, 2048, 2048, NaN).scale)).toBe(true);
+  });
+});
+
 describe("simulated mouth envelope", () => {
   it("is closed before and after the utterance", () => {
     expect(simulatedMouthValue(-10, 1000)).toBe(0);

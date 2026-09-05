@@ -60,6 +60,7 @@ type Props = {
   phase: AvatarPhase;
   emotion: MessageEmotion;
   replySequence?: number;
+  userScale?: number;
   mood?: CompanionMood | null;
   reducedMotion?: boolean;
   onReady?: (handle: Live2DHandle) => void;
@@ -110,9 +111,9 @@ function intrinsicModelSize(model: EngineModel): { w: number; h: number } {
   return { w, h };
 }
 
-function layoutModel(model: EngineModel, viewW: number, viewH: number) {
+function layoutModel(model: EngineModel, viewW: number, viewH: number, userScale = 1) {
   const { w, h } = intrinsicModelSize(model);
-  const layout = computeLive2DLayout(viewW, viewH, w, h);
+  const layout = computeLive2DLayout(viewW, viewH, w, h, userScale);
   model.scale.set(layout.scale);
   model.anchor.set(layout.anchorX, layout.anchorY);
   model.position.set(layout.x, layout.y);
@@ -123,6 +124,7 @@ export function Live2DCanvas({
   phase,
   emotion,
   replySequence = 0,
+  userScale = 1,
   reducedMotion,
   onReady,
   onFail,
@@ -140,6 +142,10 @@ export function Live2DCanvas({
   const blendRef = useRef<Record<string, number>>({});
   const hopRef = useRef<HopState | null>(null);
   const layoutYRef = useRef(0);
+  const userScaleRef = useRef(userScale);
+  const relayoutRef = useRef<(() => void) | null>(null);
+  userScaleRef.current = userScale;
+  useEffect(() => { relayoutRef.current?.(); }, [userScale]);
   const startHopRef = useRef<(hop?: Live2DHop) => void>(() => {});
 
   emotionRef.current = emotion;
@@ -227,7 +233,8 @@ export function Live2DCanvas({
         const firstLayout = layoutModel(
           model,
           application.screen.width,
-          application.screen.height
+          application.screen.height,
+          userScaleRef.current
         );
         layoutYRef.current = firstLayout.y;
         application.stage.addChild(pixiModel(model));
@@ -296,11 +303,13 @@ export function Live2DCanvas({
           void model.motion("Idle");
         }
 
-        resizeObserver = new ResizeObserver(() => {
+        const relayout = () => {
           if (!modelRef.current || !app) return;
-          const layout = layoutModel(modelRef.current, app.screen.width, app.screen.height);
+          const layout = layoutModel(modelRef.current, app.screen.width, app.screen.height, userScaleRef.current);
           layoutYRef.current = layout.y;
-        });
+        };
+        relayoutRef.current = relayout;
+        resizeObserver = new ResizeObserver(relayout);
         resizeObserver.observe(host);
 
         const onPointerMove = (event: PointerEvent) => {
@@ -334,6 +343,7 @@ export function Live2DCanvas({
       disposed = true;
       resizeObserver?.disconnect();
       removePoseListener?.();
+      relayoutRef.current = null;
       try {
         modelRef.current?.destroy({ children: true });
       } catch {

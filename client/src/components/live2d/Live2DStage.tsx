@@ -1,3 +1,4 @@
+import { useLive2DScale } from "@/hooks/useLive2DScale";
 import {
   MESSAGE_EMOTION_LABELS,
   OFFICIAL_LIVE2D_MODEL,
@@ -84,6 +85,7 @@ export function Live2DStage({
   const [failed, setFailed] = useState(false);
   const [userOverride, setUserOverride] = useState<PlayfulEmotion | null>(null);
   const [overrideTick, setOverrideTick] = useState(0);
+  const { scale, updateScale } = useLive2DScale();
   const handleRef = useRef<Live2DHandle | null>(null);
   const support = useMemo(() => supportsLive2DStage(), []);
   const reducedMotion = support.reason === "reduced-motion";
@@ -145,6 +147,7 @@ export function Live2DStage({
             phase={phase}
             emotion={emotion}
             replySequence={replySequence}
+            userScale={scale}
             mood={mood}
             reducedMotion={reducedMotion}
             onReady={handleReady}
@@ -167,6 +170,19 @@ export function Live2DStage({
       <div className="pointer-events-none absolute left-2 top-2 rounded-full bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground backdrop-blur">
         {PHASE_LABEL[phase]} · {MESSAGE_EMOTION_LABELS[emotion]}
       </div>
+
+      {useCanvas && (
+        <div className="absolute right-2 top-2 z-10 w-36 rounded-lg bg-background/85 p-2 text-xs shadow-sm backdrop-blur">
+          <div className="flex items-center justify-between">
+            <span>角色大小</span><span>{Math.round(scale * 100)}%</span>
+          </div>
+          <input aria-label="角色大小" type="range" min="80" max="250" step="5"
+            className="mt-2 block w-full accent-pink-500" value={Math.round(scale * 100)}
+            onChange={(event) => updateScale(Number(event.target.value) / 100)} />
+          <button type="button" className="mt-1 underline underline-offset-2" onClick={() => updateScale(1)}>恢复默认大小</button>
+          <p className="mt-1 text-[10px] text-muted-foreground">自动限制高度，设置保存在此浏览器</p>
+        </div>
+      )}
 
       {useCanvas && userOverride === "flirty" && (
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
