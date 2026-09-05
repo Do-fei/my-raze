@@ -68,7 +68,7 @@ export const auth = authDb
       },
       // Better-Auth defaults the cookie names to `better-auth.session_token`
       // and `better-auth.session_data`. We let it own those names; the
-      // tRPC logout route clears both for defense-in-depth.
+      // tRPC logout route delegates to Better Auth for revocation and clearing.
       // Production trusts only the configured public URL; dev also allows
       // localhost/127.0.0.1 on the active port.
       trustedOrigins: ENV.isProduction

@@ -3,6 +3,8 @@ import { configuredLlmProvider, LLM_PROVIDERS, DEEPSEEK_MODELS, llmRequestOption
 import { deepseekFailure, verifyDeepseekKey } from "./_core/deepseekAuth";
 import { openRouterFailure, verifyOpenRouterKey } from "./_core/openrouterAuth";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { auth } from "./_core/auth";
+import { fromNodeHeaders } from "better-auth/node";
 import {
   keyProvider,
   KEY_NAMES,
@@ -157,13 +159,20 @@ export const appRouter = router({
         return { ok: true as const };
       }),
 
-    logout: publicProcedure.mutation(({ ctx }) => {
-      // Defense-in-depth — Better-Auth's own /api/auth/sign-out is the
-      // primary signout path; this clears the same cookies for clients
-      // that hit tRPC directly. See ADR 0006.
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      if (!auth) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Authentication unavailable" });
+      }
+      // Let Better Auth revoke the current session and expire its own cookies,
+      // including HTTPS prefixes and any chunked session-data cookies.
+      const { headers } = await auth.api.signOut({
+        headers: fromNodeHeaders(ctx.req.headers),
+        returnHeaders: true,
+      });
+      for (const cookie of headers.getSetCookie()) {
+        ctx.res.append("Set-Cookie", cookie);
+      }
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie("better-auth.session_token", { ...cookieOptions, maxAge: -1 });
-      ctx.res.clearCookie("better-auth.session_data", { ...cookieOptions, maxAge: -1 });
       // Also clear the legacy v3 cookie if any client still has it.
       ctx.res.clearCookie("app_session_id", { ...cookieOptions, maxAge: -1 });
       return {
