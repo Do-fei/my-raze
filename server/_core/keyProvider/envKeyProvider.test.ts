@@ -108,3 +108,22 @@ describe("EnvKeyProvider — input validation", () => {
     ).rejects.toThrow(/Unknown key name/);
   });
 });
+
+describe("EnvKeyProvider — BYOK preservation", () => {
+  it("preserves exact input through encrypted save, replacement and read", async () => {
+    let stored: any;
+    const database = {
+      insert: () => ({ values: (value: any) => ({ onDuplicateKeyUpdate: async ({ set }: any) => { stored = stored ? { ...stored, ...set } : value; } }) }),
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => stored ? [stored] : [] }) }) }),
+    };
+    vi.spyOn(dbModule, "getDb").mockResolvedValue(database as any);
+    process.env.OPERATOR_OPENROUTER_KEY = "different-operator-value";
+    const provider = new EnvKeyProvider();
+    for (const input of ["sk-or-v1-" + "a".repeat(64), "sk-or-v1-" + "b".repeat(97), "sk-or-v1-" + "c".repeat(64)]) {
+      await provider.setUserKey("test-user", "openrouter", input);
+      expect(stored.encryptedValue).not.toContain(input);
+      expect(await provider.get({ userId: "test-user" }, "openrouter")).toBe(input);
+      expect(stored.lastFour).toBe(input.slice(-4));
+    }
+  });
+});
